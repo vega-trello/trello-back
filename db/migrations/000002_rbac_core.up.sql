@@ -1,0 +1,42 @@
+-- +goose Up
+-- +goose StatementBegin
+
+CREATE TABLE project (
+    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(128) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() -- в гошке обновлять
+);
+
+CREATE INDEX idx_project_title ON project(title);
+
+CREATE TABLE permission (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(32) NOT NULL UNIQUE,
+    description VARCHAR(256)
+);
+
+CREATE INDEX idx_permission_name ON permission(name);
+
+CREATE TABLE role (
+    id SERIAL PRIMARY KEY,
+    project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
+    name VARCHAR(32) NOT NULL,
+    description VARCHAR(256),
+    UNIQUE(project_uuid, name)
+);
+
+CREATE INDEX idx_role_project ON role(project_uuid);
+
+CREATE TABLE project_member (
+    project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
+    user_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES role(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (project_uuid, user_uuid)
+);
+
+CREATE INDEX idx_project_member_user ON project_member(user_uuid);
+CREATE INDEX idx_project_member_role ON project_member(role_id);
+
+-- +goose StatementEnd
