@@ -13,7 +13,6 @@ type TaskDB struct {
 	CreatorUUID uuid.UUID  `db:"creator_uuid"`
 	Title       string     `db:"title"`
 	Description string     `db:"description"`
-	Position    int        `db:"position"`
 	DeletedAt   *time.Time `db:"delete_at"`   // nullable
 	ArchivedAt  *time.Time `db:"archived_at"` // nullable
 	CreatedAt   time.Time  `db:"created_at"`

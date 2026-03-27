@@ -1,58 +1,101 @@
 package dto
 
-import (
-	"github.com/vega-trello/trello-back/internal/utils"
-)
+import "github.com/vega-trello/trello-back/internal/utils"
 
-// POST /api/v1/columns/:id/tasks
+// POST /projects/{projectUUID}/task
 type CreateTaskRequest struct {
 	Title       *string `json:"title" binding:"omitempty,max=256"`
 	Description *string `json:"description" binding:"omitempty,max=4096"`
-	Position    *int    `json:"position,omitempty"`
 	StartDate   *string `json:"start_date,omitempty"`
 	EndDate     *string `json:"end_date,omitempty"`
+	ColumnID    *int    `json:"column_id,omitempty"`
 }
 
 // PUT /api/v1/tasks/:id
 type UpdateTaskRequest struct {
 	Title       *string `json:"title" binding:"omitempty,max=256"`
 	Description *string `json:"description" binding:"omitempty,max=4096"`
-	Position    *int    `json:"position,omitempty"`
-	StatusID    *int    `json:"status_id,omitempty"`
 	StartDate   *string `json:"start_date,omitempty"`
 	EndDate     *string `json:"end_date,omitempty"`
+	ColumnID    *int    `json:"column_id,omitempty"`
 }
 
-// PUT /api/v1/tasks/:id/move
-type MoveTaskRequest struct {
-	ColumnID int `json:"column_id" binding:"required"`
-	Position int `json:"position" binding:"required,min=0"`
+// delete:  /projects/PprojectUUID}/task?taskID={id}
+type DeleteTaskRequest struct {
+	ID int `json:"id" binding:"required,min=1"`
 }
 
-func (r *MoveTaskRequest) Validate() error {
-	if r.ColumnID < 1 {
-		return &utils.ValidationError{Field: "column_id", Message: "column_id is required"}
+// post: /projects/{projectUUID}/task/tags
+type AddTagToTaskRequest struct {
+	TaskID int `json:"task_id" binding:"required,min=1"`
+	TagID  int `json:"tag_id" binding:"required,min=1"`
+}
+
+// DELETE /projects/{projectUUID}/task/tags
+type DeleteTagFromTaskRequest struct {
+	TaskID int `json:"task_id" binding:"required,min=1"`
+	TagID  int `json:"tag_id" binding:"required,min=1"`
+}
+
+func (r *DeleteTagFromTaskRequest) Validate() error {
+	if r.TaskID < 1 {
+		return &utils.ValidationError{
+			Field:   "task_id",
+			Message: "task_id is required",
+		}
 	}
-	if r.Position < 0 {
-		return &utils.ValidationError{Field: "position", Message: "position must be non-negative"}
+	if r.TagID < 1 {
+		return &utils.ValidationError{
+			Field:   "tag_id",
+			Message: "tag_id is required",
+		}
 	}
 	return nil
 }
 
-// POST /api/v1/tasks/:id/assignees
-type AssignTaskRequest struct {
-	Username string `json:"username" binding:"required"`
-}
-
-func (r *AssignTaskRequest) Validate() error {
-	if r.Username == "" {
-		return &utils.ValidationError{Field: "username", Message: "username is required"}
+func (r *CreateTaskRequest) Validate() error {
+	if r.Title != nil && len(*r.Title) > 256 {
+		return &utils.ValidationError{
+			Field:   "title",
+			Message: "title must be at most 256 characters",
+		}
 	}
+
+	if r.Description != nil && len(*r.Description) > 2048 {
+		return &utils.ValidationError{
+			Field:   "description",
+			Message: "description must be at most 2048 characters",
+		}
+	}
+
 	return nil
 }
 
-// POST /api/v1/tasks/:id/archive
-type ArchiveTaskRequest struct{}
+func (r *UpdateTaskRequest) Validate() error {
+	if r.Title != nil && len(*r.Title) > 256 {
+		return &utils.ValidationError{
+			Field:   "title",
+			Message: "title must be at most 256 characters",
+		}
+	}
 
-// DELETE /api/v1/tasks/:id
-type DeleteTaskRequest struct{}
+	if r.Description != nil && len(*r.Description) > 2048 {
+		return &utils.ValidationError{
+			Field:   "description",
+			Message: "description must be at most 2048 characters",
+		}
+	}
+
+	return nil
+}
+
+func (r *DeleteTaskRequest) Validate() error {
+	if r.ID < 1 {
+		return &utils.ValidationError{
+			Field:   "id",
+			Message: "id is required and must be positive",
+		}
+	}
+
+	return nil
+}

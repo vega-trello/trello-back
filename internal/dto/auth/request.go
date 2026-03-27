@@ -2,14 +2,28 @@ package dto
 
 import "github.com/vega-trello/trello-back/internal/utils"
 
+// post: /auth/register
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=64"`
 	Password string `json:"password" binding:"required,min=8"`
 }
 
+// post: /auth/login
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+}
+
+// post: /auth/update
+type UpdateTokenRequest struct {
+	RefreshToken string `json:"token" binding:"required"`
+}
+
+// post: /auth/logout
+type LogoutRequest struct{}
+
+func (r *LogoutRequest) Validate() error {
+	return nil
 }
 
 func (r *RegisterRequest) Validate() error {
@@ -43,5 +57,15 @@ func (r *LoginRequest) Validate() error {
 		return &utils.ValidationError{Field: "password", Message: "password is required"}
 	}
 
+	return nil
+}
+
+func (r *UpdateTokenRequest) Validate() error {
+	if r.RefreshToken == "" {
+		return &utils.ValidationError{
+			Field:   "refreshToken",
+			Message: "refreshToken is required",
+		}
+	}
 	return nil
 }

@@ -5,9 +5,8 @@ CREATE TABLE project_column (
     id SERIAL PRIMARY KEY,
     project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
     name VARCHAR(64) NOT NULL,
-    position INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(project_uuid, position)
+    UNIQUE(project_uuid)
 );
 
 CREATE INDEX idx_project_column_project ON project_column(project_uuid);
@@ -27,14 +26,13 @@ CREATE TABLE tasks (
     creator_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
     title TEXT,
     description TEXT,
-    position INTEGER NOT NULL DEFAULT 0,
     deleted_at TIMESTAMPTZ, -- обновлять в гошке
     archived_at TIMESTAMPTZ, --обновлять в гошке
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     start_date TIMESTAMPTZ,
     end_date TIMESTAMPTZ,
-    UNIQUE (column_id, position)
+    UNIQUE (column_id)
 );
 
 CREATE INDEX idx_tasks_column ON tasks(column_id);

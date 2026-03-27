@@ -4,6 +4,7 @@
 CREATE TABLE project (
     uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(128) NOT NULL,
+    description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() -- в гошке обновлять
 );

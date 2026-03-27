@@ -4,11 +4,16 @@ import (
 	"github.com/vega-trello/trello-back/internal/utils"
 )
 
+// post: /projects
 type CreateProjectRequest struct {
-	Title string `json:"title" binding:"required,min=1,max=128"`
+	Title       string `json:"title" binding:"required,min=1,max=128"`
+	Description string `json:"description,omitempty" binding:"omitempty,max=512"`
 }
+
+// patch: /projects/{projectUID}
 type UpdateProjectRequest struct {
-	Title string `json:"title" binding:"omitempty,min=1,max=128"`
+	Title       string `json:"title" binding:"omitempty,min=1,max=128"`
+	Description string `json:"description,omitempty" binding:"omitempty,max=512"`
 }
 
 func (r *CreateProjectRequest) Validate() error {
