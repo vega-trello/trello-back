@@ -4,11 +4,12 @@
 CREATE TABLE project_column (
     id SERIAL PRIMARY KEY,
     project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
+    position INTEGER,
     name VARCHAR(64) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(project_uuid)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX idx_project_column_lookup ON project_column(project_uuid, position);
 CREATE INDEX idx_project_column_project ON project_column(project_uuid);
 
 CREATE TABLE project_status (
