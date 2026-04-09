@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vega-trello/trello-back/internal/model"
 )
@@ -56,10 +55,10 @@ func (r *MemberRepository) Create(
 		&member.JoinedAt,
 	)
 	if err != nil {
-		if isUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			return nil, ErrMemberAlreadyExists
 		}
-		if isForeignKeyViolation(err) {
+		if IsForeignKeyViolation(err) {
 			return nil, fmt.Errorf("repository: invalid project, user, or role: %w", err)
 		}
 		return nil, fmt.Errorf("repository: create member: %w", err)
@@ -182,20 +181,4 @@ func (r *MemberRepository) FindByProjectAndUser(
 		return nil, fmt.Errorf("repository: find member by project and user: %w", err)
 	}
 	return &member, nil
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
-	}
-	return false
-}
-
-func isForeignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23503"
-	}
-	return false
 }
