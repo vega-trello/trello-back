@@ -11,9 +11,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-var ErrMemberNotFound = errors.New("member not found")
-var ErrMemberAlreadyExists = errors.New("member already exists in project")
-
 type MemberRepositoryInterface interface {
 	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
 	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID) ([]*model.ProjectMember, error)

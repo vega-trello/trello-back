@@ -12,12 +12,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-var (
-	ErrUserAlreadyExists  = errors.New("user already exists")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-)
-
 // используется для возврата данных при логине
 // Включает password_hash для проверки в сервисе
 type loginResult struct {

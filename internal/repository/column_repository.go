@@ -11,8 +11,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-var ErrColumnNotFound = errors.New("column not found")
-
 type ColumnRepositoryInterface interface {
 	Create(ctx context.Context, projectUUID uuid.UUID, name string, position int) (*model.Column, error)
 	FindByID(ctx context.Context, id int) (*model.Column, error)

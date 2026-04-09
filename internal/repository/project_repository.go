@@ -11,8 +11,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-var ErrProjectNotFound = errors.New("project not found")
-
 type ProjectRepositoryInterface interface {
 	Create(ctx context.Context, title, description string) (*model.Project, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Project, error)
