@@ -21,11 +21,15 @@ CREATE INDEX idx_permission_name ON permission(name);
 
 CREATE TABLE role (
     id SERIAL PRIMARY KEY,
-    project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
+    project_uuid UUID REFERENCES project(uuid) ON DELETE CASCADE,
     name VARCHAR(32) NOT NULL,
     description VARCHAR(256),
     UNIQUE(project_uuid, name)
 );
+
+CREATE UNIQUE INDEX idx_role_global_name_unique
+    ON role (name)
+    WHERE project_uuid IS NULL;
 
 CREATE INDEX idx_role_project ON role(project_uuid);
 
@@ -40,4 +44,11 @@ CREATE TABLE project_member (
 CREATE INDEX idx_project_member_user ON project_member(user_uuid);
 CREATE INDEX idx_project_member_role ON project_member(role_id);
 
+INSERT INTO role (id, name, description, project_uuid) VALUES
+    (1, 'owner', 'Owner', NULL),                                                       (2, 'admin', 'Admin', NULL),
+    (3, 'member', 'Member', NULL),
+    (4, 'viewer', 'Viewer', NULL)
+ON CONFLICT (id) DO NOTHING;
+
+SELECT setval('role_id_seq', (SELECT MAX(id) FROM role));
 -- +goose StatementEnd

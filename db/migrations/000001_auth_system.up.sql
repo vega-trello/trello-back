@@ -24,4 +24,5 @@ CREATE TABLE sso_user (
     UNIQUE(provider, external_id)
 );
 
+
 -- +goose StatementEnd
