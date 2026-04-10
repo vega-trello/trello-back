@@ -27,6 +27,15 @@ CREATE TABLE role (
     UNIQUE(project_uuid, name)
 );
 
+CREATE TABLE role_permission (
+    role_id INTEGER NOT NULL REFERENCES role(id) ON DELETE CASCADE,
+    permission_id INTEGER NOT NULL REFERENCES permission(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE INDEX idx_role_permission_role ON role_permission(role_id);
+CREATE INDEX idx_role_permission_permission ON role_permission(permission_id);
+
 CREATE UNIQUE INDEX idx_role_global_name_unique
     ON role (name)
     WHERE project_uuid IS NULL;
