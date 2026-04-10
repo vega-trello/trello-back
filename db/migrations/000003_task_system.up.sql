@@ -42,7 +42,8 @@ CREATE INDEX idx_tasks_deleted ON tasks(deleted_at) WHERE deleted_at IS NOT NULL
 CREATE INDEX idx_tasks_archived ON tasks(archived_at) WHERE archived_at IS NOT NULL;
 
 
-CREATE TABLE task_assignee (                              task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+CREATE TABLE task_assignee (
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     user_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (task_id, user_uuid)
