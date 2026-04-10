@@ -13,4 +13,7 @@ var (
 	ErrMemberNotFound      = errors.New("member not found")
 	ErrMemberAlreadyExists = errors.New("member already exists in project")
 	ErrColumnNotFound      = errors.New("column not found")
+	ErrTaskNotFound        = errors.New("task not found")
+	ErrTaskDeleted         = errors.New("task is deleted")
+	ErrTaskArchived        = errors.New("task is archived")
 )

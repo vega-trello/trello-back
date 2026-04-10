@@ -58,7 +58,7 @@ func cleanAllTables(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 
-	_, _ = pool.Exec(ctx, "TRUNCATE project_member, project_column, project, base_user RESTART IDENTITY CASCADE")
+	_, _ = pool.Exec(ctx, "TRUNCATE project_member, project_column, project, base_user, task_assignee, tasks RESTART IDENTITY CASCADE")
 }
 
 func setupTestPool(t *testing.T) *pgxpool.Pool {

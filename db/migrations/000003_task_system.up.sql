@@ -32,8 +32,7 @@ CREATE TABLE tasks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     start_date TIMESTAMPTZ,
-    end_date TIMESTAMPTZ,
-    UNIQUE (column_id)
+    end_date TIMESTAMPTZ
 );
 
 CREATE INDEX idx_tasks_column ON tasks(column_id);
