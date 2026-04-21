@@ -8,7 +8,7 @@ DROP INDEX IF EXISTS idx_permission_name;
 DROP INDEX IF EXISTS idx_project_title;
 
 DROP TABLE IF EXISTS project_member;
-DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS role_permission;
 DROP TABLE IF EXISTS role;
 DROP TABLE IF EXISTS permission;
 DROP TABLE IF EXISTS project;
