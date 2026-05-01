@@ -6,7 +6,7 @@ import (
 
 type MemberResponse struct {
 	Username    string    `json:"username"`
-	UUID        string    `json:"user_uuid"`
+	UserUUID    string    `json:"user_uuid"`
 	ProjectUUID string    `json:"project_uuid"`
 	RoleID      int       `json:"role_id"`
 	RoleName    string    `json:"role_name"`

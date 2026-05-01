@@ -1,27 +1,28 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type User struct {
-	UUID      uuid.UUID
-	Username  string
-	UserType  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	UUID      uuid.UUID `db:"uuid"`
+	Username  string    `db:"username"`
+	UserType  string    `db:"user_type"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }
 
 type ManualUser struct {
-	UUID         uuid.UUID
-	HashPassword []byte
+	UserUUID     uuid.UUID `db:"user_uuid"`
+	PasswordHash []byte    `db:"password_hash"`
 }
 
 type SsoUser struct {
-	UUID       uuid.UUID
-	Provider   string
-	ExternalID string
-	Metadata   []byte
+	UserUUID   uuid.UUID       `db:"user_uuid"`
+	Provider   string          `db:"provider"`
+	ExternalID string          `db:"external_id"`
+	Metadata   json.RawMessage `db:"metadata"`
 }

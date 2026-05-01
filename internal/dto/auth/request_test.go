@@ -8,14 +8,12 @@ import (
 
 // Тест валидации RegisterRequest
 func TestRegisterRequest_Validate(t *testing.T) {
-	//Таблица тестовых случаев
 	tests := []struct {
 		name        string
 		req         RegisterRequest // Входные данные
 		wantErr     bool
 		errContains string
 	}{
-		// test валидные данные
 		{
 			name: "valid request",
 			req: RegisterRequest{

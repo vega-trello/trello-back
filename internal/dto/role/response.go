@@ -1,33 +1,30 @@
+// internal/dto/role/response.go
 package dto
 
 import (
 	"time"
+
+	"github.com/google/uuid"
 )
 
+// RoleResponse — ответ с информацией о роли
 type RoleResponse struct {
 	ID          int       `json:"id"`
-	ProjectUUID string    `json:"projectUUID"`
-	Discription string    `json:"discription"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ProjectUUID uuid.UUID `json:"project_uuid"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
+// PermissionResponse — ответ с информацией о разрешении
 type PermissionResponse struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-type RoleListResponse struct {
-	Roles []RoleResponse `json:"roles"`
-	Total int            `json:"total"`
-}
-
-type PermissionListRespoonse struct {
-	Permissions []PermissionResponse `json:"permissions"`
-	Total       int                  `json:"total"`
-}
-
-type RoleDetailResponse struct {
+// RoleWithPermissionsResponse — роль с списком разрешений
+type RoleWithPermissionsResponse struct {
 	RoleResponse
-	Permissions []PermissionResponse `json:"permissions,omitempty"`
+	Permissions []PermissionResponse `json:"permissions"`
 }

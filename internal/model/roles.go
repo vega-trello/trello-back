@@ -1,12 +1,15 @@
 package model
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 type Role struct {
 	ID          int       `db:"id"`
 	ProjectUUID uuid.UUID `db:"project_uuid"`
 	Name        string    `db:"name"`
-	Description string    `db:"description"`
+	Description *string   `db:"description"`
+	// CreatedAt   time.Time `db:"created_at"`
 }
 type Permission struct {
 	ID          int    `db:"id"`

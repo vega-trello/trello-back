@@ -1,10 +1,13 @@
 package dto
 
-import "github.com/vega-trello/trello-back/internal/utils"
+import (
+	"github.com/google/uuid"
+	"github.com/vega-trello/trello-back/internal/utils"
+)
 
 // post /projects/{projectUUID}/members
 type CreateMemberRequest struct {
-	UserUUID string `json:"userUUID"`
+	UserUUID string `json:"user_uuid" binding:"required"`
 	RoleID   int    `json:"role_id" binding:"required,min=1"`
 }
 
@@ -15,19 +18,14 @@ type UpdateMemberRequest struct {
 
 func (r *CreateMemberRequest) Validate() error {
 	if r.UserUUID == "" {
-		return &utils.ValidationError{
-			Field:   "user_uuid",
-			Message: "user_uuid is required",
-		}
+		return &utils.ValidationError{Field: "user_uuid", Message: "required"}
 	}
-
+	if _, err := uuid.Parse(r.UserUUID); err != nil {
+		return &utils.ValidationError{Field: "user_uuid", Message: "must be valid UUID"}
+	}
 	if r.RoleID < 1 {
-		return &utils.ValidationError{
-			Field:   "role_id",
-			Message: "role_id must be at least 1",
-		}
+		return &utils.ValidationError{Field: "role_id", Message: "min 1"}
 	}
-
 	return nil
 }
 
