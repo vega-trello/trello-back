@@ -12,30 +12,28 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-// используется для возврата данных при логине
-// Включает password_hash для проверки в сервисе
-type loginResult struct {
-	User         model.User
-	PasswordHash []byte
-}
-
+// AuthRepositoryInterface определяет контракт для работы с аутентификацией
 type AuthRepositoryInterface interface {
-	Register(ctx context.Context, username string, passwordHash []byte) (*model.User, error)
-	LoginByUsername(ctx context.Context, username string) (*model.User, []byte, error)
-	UpdatePassword(ctx context.Context, userUUID uuid.UUID, newPasswordHash []byte) error
+	RegisterPasswordUser(ctx context.Context, username string, passwordHash []byte) (*model.User, error)
+	FindUserByUsername(ctx context.Context, username string) (*model.User, []byte, error)
+	FindOrCreateUserBySSO(ctx context.Context, provider string, externalID string, username string) (*model.User, error)
+	FindUserByUUID(ctx context.Context, userUUID uuid.UUID) (*model.User, error)
+	UpdateUser(ctx context.Context, userUUID uuid.UUID, username *string, newPasswordHash []byte) (*model.User, error)
 	Logout(ctx context.Context, userUUID uuid.UUID) error
-	FindByUsername(ctx context.Context, username string) (*model.User, error)
 }
 
+// AuthRepository реализует AuthRepositoryInterface с использованием pgxpool
 type AuthRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewAuthRepository создает новый экземпляр репозитория
 func NewAuthRepository(db *pgxpool.Pool) *AuthRepository {
 	return &AuthRepository{db: db}
 }
 
-func (r *AuthRepository) Register(
+// RegisterPasswordUser создает нового manual пользователя (base_user + manual_user)
+func (r *AuthRepository) RegisterPasswordUser(
 	ctx context.Context,
 	username string,
 	passwordHash []byte,
@@ -48,19 +46,11 @@ func (r *AuthRepository) Register(
 
 	userUUID := uuid.New()
 	now := time.Now()
-	//делаем insert в base_user
-	var user model.User
-	err = tx.QueryRow(ctx, `
+
+	_, err = tx.Exec(ctx, `
 		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
 		VALUES ($1, $2, 'manual', $3, $3)
-		RETURNING uuid, username, user_type, created_at, updated_at
-	`, userUUID, username, now).Scan(
-		&user.UUID,
-		&user.Username,
-		&user.UserType,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
+	`, userUUID, username, now)
 	if err != nil {
 		if IsUniqueViolation(err) {
 			return nil, ErrUserAlreadyExists
@@ -68,7 +58,6 @@ func (r *AuthRepository) Register(
 		return nil, fmt.Errorf("repository: create base_user: %w", err)
 	}
 
-	//делаем insert в manual_user
 	_, err = tx.Exec(ctx, `
 		INSERT INTO manual_user (user_uuid, password_hash)
 		VALUES ($1, $2)
@@ -81,14 +70,23 @@ func (r *AuthRepository) Register(
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 
-	return &user, nil
+	return &model.User{
+		UUID:      userUUID,
+		Username:  username,
+		UserType:  "manual",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
 }
 
-func (r *AuthRepository) LoginByUsername(
+// FindUserByUsername находит пользователя по имени и возвращает хеш пароля для проверки
+// Работает только для manual пользователей (user_type = 'manual')
+func (r *AuthRepository) FindUserByUsername(
 	ctx context.Context,
 	username string,
 ) (*model.User, []byte, error) {
-	var result loginResult
+	var user model.User
+	var passwordHash []byte
 
 	err := r.db.QueryRow(ctx, `
 		SELECT u.uuid, u.username, u.user_type, u.created_at, u.updated_at, m.password_hash
@@ -96,12 +94,12 @@ func (r *AuthRepository) LoginByUsername(
 		JOIN manual_user m ON u.uuid = m.user_uuid
 		WHERE u.username = $1 AND u.user_type = 'manual'
 	`, username).Scan(
-		&result.User.UUID,
-		&result.User.Username,
-		&result.User.UserType,
-		&result.User.CreatedAt,
-		&result.User.UpdatedAt,
-		&result.PasswordHash,
+		&user.UUID,
+		&user.Username,
+		&user.UserType,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&passwordHash,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -111,86 +109,173 @@ func (r *AuthRepository) LoginByUsername(
 		return nil, nil, fmt.Errorf("repository: find user by username: %w", err)
 	}
 
-	return &result.User, result.PasswordHash, nil
+	return &user, passwordHash, nil
 }
 
-// UpdatePassword обновляет пароль пользователя
-// POST /auth/update
-func (r *AuthRepository) UpdatePassword(
+// FindOrCreateUserBySSO ищет пользователя по SSO provider+external_id.
+// Если не находит - создает нового (JIT Provisioning).
+func (r *AuthRepository) FindOrCreateUserBySSO(
 	ctx context.Context,
-	userUUID uuid.UUID,
-	newPasswordHash []byte,
-) error {
+	provider string,
+	externalID string,
+	username string,
+) (*model.User, error) {
+
+	var user model.User
+	err := r.db.QueryRow(ctx, `
+		SELECT u.uuid, u.username, u.user_type, u.created_at, u.updated_at
+		FROM base_user u
+		JOIN sso_user s ON u.uuid = s.user_uuid
+		WHERE s.provider = $1 AND s.external_id = $2
+	`, provider, externalID).Scan(
+		&user.UUID, &user.Username, &user.UserType, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err == nil {
+		return &user, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("repository: check sso user: %w", err)
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("repository: begin transaction: %w", err)
+		return nil, fmt.Errorf("repository: begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	//Обновляем password_hash в manual_user
+	newUUID := uuid.New()
+	now := time.Now()
+
 	_, err = tx.Exec(ctx, `
-		UPDATE manual_user
-		SET password_hash = $1
-		WHERE user_uuid = $2
-	`, newPasswordHash, userUUID)
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, $2, 'sso', $3, $3)
+	`, newUUID, username, now)
 	if err != nil {
-		return fmt.Errorf("repository: update password_hash: %w", err)
+		if IsUniqueViolation(err) {
+			return nil, ErrUserAlreadyExists
+		}
+		return nil, fmt.Errorf("repository: create sso base_user: %w", err)
 	}
 
-	//Обновляем updated_at в base_user
-	result, err := tx.Exec(ctx, `
-		UPDATE base_user
-		SET updated_at = NOW()
-		WHERE uuid = $1
-	`, userUUID)
+	// Создаем запись в sso_user
+	// metadata пока ставим пустым объектом '{}'
+	_, err = tx.Exec(ctx, `
+		INSERT INTO sso_user (user_uuid, provider, external_id, metadata)
+		VALUES ($1, $2, $3, '{}')
+	`, newUUID, provider, externalID)
 	if err != nil {
-		return fmt.Errorf("repository: update updated_at: %w", err)
-	}
-
-	if result.RowsAffected() == 0 {
-		return ErrUserNotFound
+		return nil, fmt.Errorf("repository: create sso_user record: %w", err)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("repository: commit transaction: %w", err)
+		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 
-	return nil
+	return &model.User{
+		UUID:      newUUID,
+		Username:  username,
+		UserType:  "sso",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
 }
 
-// Logout заглушка для stateless JWT
-// POST /auth/logout
-// В stateless JWT logout не требует действий на стороне сервера
-func (r *AuthRepository) Logout(ctx context.Context, userUUID uuid.UUID) error {
-	// Stateless JWT: токен просто удаляется на клиенте
-	return nil
-}
-
-// FindByUsername без password_hash. Используется для проверки существования пользователя
-func (r *AuthRepository) FindByUsername(
+// FindUserByUUID находит пользователя по UUID (используется для валидации JWT)
+func (r *AuthRepository) FindUserByUUID(
 	ctx context.Context,
-	username string,
+	userUUID uuid.UUID,
 ) (*model.User, error) {
 	var user model.User
-
 	err := r.db.QueryRow(ctx, `
 		SELECT uuid, username, user_type, created_at, updated_at
-		FROM base_user
-		WHERE username = $1
-	`, username).Scan(
-		&user.UUID,
-		&user.Username,
-		&user.UserType,
-		&user.CreatedAt,
-		&user.UpdatedAt,
+		FROM base_user WHERE uuid = $1
+	`, userUUID).Scan(
+		&user.UUID, &user.Username, &user.UserType, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("repository: find user by username: %w", err)
+		return nil, fmt.Errorf("repository: find user by uuid: %w", err)
+	}
+	return &user, nil
+}
+
+// UpdateUser обновляет username и/или password_hash.
+// newPasswordHash должен быть уже захеширован на уровне сервиса.
+func (r *AuthRepository) UpdateUser(
+	ctx context.Context,
+	userUUID uuid.UUID,
+	username *string,
+	newPasswordHash []byte,
+) (*model.User, error) {
+
+	var currentUserType string
+	err := r.db.QueryRow(ctx, `SELECT user_type FROM base_user WHERE uuid = $1`, userUUID).Scan(&currentUserType)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	if newPasswordHash != nil && currentUserType == "sso" {
+		return nil, ErrSSOUserPasswordChange
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("repository: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if username != nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE base_user SET username = $1, updated_at = NOW()
+			WHERE uuid = $2
+		`, *username, userUUID)
+		if err != nil {
+			if IsUniqueViolation(err) {
+				return nil, ErrUserAlreadyExists
+			}
+			return nil, fmt.Errorf("repository: update username: %w", err)
+		}
+	}
+
+	if newPasswordHash != nil && currentUserType == "manual" {
+		_, err = tx.Exec(ctx, `
+			UPDATE manual_user SET password_hash = $1
+			WHERE user_uuid = $2
+		`, newPasswordHash, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("repository: update password: %w", err)
+		}
+	}
+
+	var user model.User
+	err = tx.QueryRow(ctx, `
+		SELECT uuid, username, user_type, created_at, updated_at
+		FROM base_user WHERE uuid = $1
+	`, userUUID).Scan(
+		&user.UUID, &user.Username, &user.UserType, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("repository: fetch updated user: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 
 	return &user, nil
+}
+
+// Logout - заглушка для stateless JWT архитектуры.
+// Токен инвалидируется на клиенте (удаление из sessionStorage).
+func (r *AuthRepository) Logout(ctx context.Context, userUUID uuid.UUID) error {
+	// Stateless JWT: нет сессии на сервере для инвалидации
+	// Если в будущем потребуется blacklist, этот метод можно доработать
+	return nil
 }
