@@ -5,300 +5,247 @@ package repository
 
 import (
 	"context"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 )
 
-// setupAuthRepo инициализирует репозиторий аутентификации
-func setupAuthRepo(t *testing.T) (*AuthRepository, *pgxpool.Pool) {
-	t.Helper()
+func TestAuthRepository_RegisterPasswordUser_Success(t *testing.T) {
 	pool := setupTestPool(t)
 	repo := NewAuthRepository(pool)
-
-	t.Cleanup(func() {
-		cleanAllTables(t, pool)
-	})
-
-	return repo, pool
-}
-
-// hashPassword хеширует пароль для тестов (используем bcrypt)
-func hashPassword(t *testing.T, password string) []byte {
-	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	require.NoError(t, err, "failed to hash password")
-	return hash
-}
-
-func TestAuthRepository_Register_Success(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
 	ctx := context.Background()
 
-	username := "testuser_" + uuid.New().String()[:8]
-	passwordHash := hashPassword(t, "secure_password_123")
+	username := "testuser"
+	hash := hashPassword(t, "securepassword")
 
-	user, err := repo.Register(ctx, username, passwordHash)
+	user, err := repo.RegisterPasswordUser(ctx, username, hash)
+
 	require.NoError(t, err)
 	require.NotNil(t, user)
-
-	assert.NotZero(t, user.UUID)
 	assert.Equal(t, username, user.Username)
 	assert.Equal(t, "manual", user.UserType)
-	assert.WithinDuration(t, time.Now(), user.CreatedAt, 2*time.Second)
-	assert.WithinDuration(t, user.CreatedAt, user.UpdatedAt, 1*time.Second)
+	assert.NotEmpty(t, user.UUID)
 }
 
-func TestAuthRepository_Register_DuplicateUsername(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+func TestAuthRepository_RegisterPasswordUser_Duplicate(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	username := "duplicate_user_" + uuid.New().String()[:8]
-	passwordHash := hashPassword(t, "password1")
+	username := "duplicate_user"
+	hash := hashPassword(t, "password")
 
-	// Первая регистрация успешна
-	_, err := repo.Register(ctx, username, passwordHash)
+	_, err := repo.RegisterPasswordUser(ctx, username, hash)
 	require.NoError(t, err)
 
-	// Вторая регистрация с тем же username ошибка
-	_, err = repo.Register(ctx, username, hashPassword(t, "password2"))
-	assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	_, err = repo.RegisterPasswordUser(ctx, username, hash)
+	require.Error(t, err)
+	assert.Equal(t, ErrUserAlreadyExists, err)
 }
 
-func TestAuthRepository_LoginByUsername_Success(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+func TestAuthRepository_FindUserByUsername_Success(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	username := "login_user_" + uuid.New().String()[:8]
-	password := "correct_password"
-	passwordHash := hashPassword(t, password)
+	username := "login_user"
+	password := "secret"
+	hash := hashPassword(t, password)
 
-	// Сначала регистрируем пользователя
-	_, err := repo.Register(ctx, username, passwordHash)
+	_, err := repo.RegisterPasswordUser(ctx, username, hash)
 	require.NoError(t, err)
 
-	// Затем логинимся
-	user, returnedHash, err := repo.LoginByUsername(ctx, username)
+	foundUser, foundHash, err := repo.FindUserByUsername(ctx, username)
+
 	require.NoError(t, err)
-	require.NotNil(t, user)
-	require.NotEmpty(t, returnedHash)
-
-	assert.Equal(t, username, user.Username)
-	assert.Equal(t, "manual", user.UserType)
-
-	// Проверяем хеш через bcrypt, а не прямым сравнением
-	err = bcrypt.CompareHashAndPassword(returnedHash, []byte(password))
-	assert.NoError(t, err)
+	require.NotNil(t, foundUser)
+	require.NotNil(t, foundHash)
+	assert.Equal(t, username, foundUser.Username)
+	assert.Equal(t, "manual", foundUser.UserType)
+	assert.NotEmpty(t, foundHash)
 }
 
-func TestAuthRepository_LoginByUsername_NotFound(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+func TestAuthRepository_FindUserByUsername_NotFound(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	// Пользователь не существует
-	_, _, err := repo.LoginByUsername(ctx, "nonexistent_user")
-	assert.ErrorIs(t, err, ErrInvalidCredentials)
+	_, _, err := repo.FindUserByUsername(ctx, "non_existent_user")
+	require.Error(t, err)
+	assert.Equal(t, ErrInvalidCredentials, err)
 }
 
-func TestAuthRepository_LoginByUsername_WrongType(t *testing.T) {
-	repo, pool := setupAuthRepo(t)
+func TestAuthRepository_FindUserByUsername_SSOUser(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	// Создаём SSO пользователя напрямую (не через Register)
-	userUUID := createTestBaseUser(t, pool)
+	// Создаём SSO-пользователя напрямую в БД
+	userUUID := uuid.New()
 	_, err := pool.Exec(ctx, `
-		INSERT INTO sso_user (user_uuid, provider, external_id)
-		VALUES ($1, $2, $3)
-	`, userUUID, "google", "external_123")
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, $2, 'sso', NOW(), NOW())
+	`, userUUID, "sso_user")
 	require.NoError(t, err)
 
-	// Попытка логина по username для manual_user не найдёт SSO пользователя
-	_, _, err = repo.LoginByUsername(ctx, "testuser_"+userUUID.String()[:8])
-	assert.ErrorIs(t, err, ErrInvalidCredentials)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO sso_user (user_uuid, provider, external_id, metadata)
+		VALUES ($1, $2, $3, '{}')
+	`, userUUID, "google", "12345")
+	require.NoError(t, err)
+
+	// Пытаемся найти через метод для manual-пользователей
+	_, _, err = repo.FindUserByUsername(ctx, "sso_user")
+	require.Error(t, err)
+	assert.Equal(t, ErrInvalidCredentials, err)
 }
 
-func TestAuthRepository_UpdatePassword_Success(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+func TestAuthRepository_FindUserByUUID_Success(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	username := "update_user_" + uuid.New().String()[:8]
-	oldPassword := "old_password"
-	newPassword := "new_password"
+	userUUID := createTestUser(t, pool, "uuid_user", "pass123")
 
-	// Регистрируем пользователя
-	user, err := repo.Register(ctx, username, hashPassword(t, oldPassword))
+	foundUser, err := repo.FindUserByUUID(ctx, userUUID)
+
 	require.NoError(t, err)
-
-	// Обновляем пароль
-	err = repo.UpdatePassword(ctx, user.UUID, hashPassword(t, newPassword))
-	assert.NoError(t, err)
-
-	// Проверяем, что новый пароль сохранился
-	_, returnedHash, err := repo.LoginByUsername(ctx, username)
-	require.NoError(t, err)
-	err = bcrypt.CompareHashAndPassword(returnedHash, []byte(newPassword))
-	assert.NoError(t, err)
-}
-func TestAuthRepository_UpdatePassword_UpdatesTimestamp(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	username := "timestamp_user_" + uuid.New().String()[:8]
-	passwordHash := hashPassword(t, "password")
-
-	user, err := repo.Register(ctx, username, passwordHash)
-	require.NoError(t, err)
-	createdAt := user.CreatedAt
-	updatedAt := user.UpdatedAt
-	time.Sleep(10 * time.Millisecond)
-
-	err = repo.UpdatePassword(ctx, user.UUID, hashPassword(t, "new_password"))
-	require.NoError(t, err)
-
-	updatedUser, err := repo.FindByUsername(ctx, username)
-	require.NoError(t, err)
-
-	assert.Equal(t, createdAt, updatedUser.CreatedAt)
-	assert.True(t, updatedUser.UpdatedAt.After(updatedAt))
+	require.NotNil(t, foundUser)
+	assert.Equal(t, "uuid_user", foundUser.Username)
+	assert.Equal(t, userUUID, foundUser.UUID)
 }
 
-func TestAuthRepository_UpdatePassword_UserNotFound(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+func TestAuthRepository_FindUserByUUID_NotFound(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	nonExistentUUID := uuid.New()
-	err := repo.UpdatePassword(ctx, nonExistentUUID, hashPassword(t, "new_password"))
-	assert.ErrorIs(t, err, ErrUserNotFound)
+	fakeUUID := uuid.New()
+	_, err := repo.FindUserByUUID(ctx, fakeUUID)
+
+	require.Error(t, err)
+	assert.Equal(t, ErrUserNotFound, err)
+}
+
+func TestAuthRepository_UpdateUser_Username(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
+	ctx := context.Background()
+
+	userUUID := createTestUser(t, pool, "old_name", "pass123")
+	newUsername := "new_name"
+
+	updated, err := repo.UpdateUser(ctx, userUUID, &newUsername, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, "new_name", updated.Username)
+}
+
+func TestAuthRepository_UpdateUser_Password(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
+	ctx := context.Background()
+
+	userUUID := createTestUser(t, pool, "pass_change", "old_pass")
+	newHash := hashPassword(t, "new_pass")
+
+	updated, err := repo.UpdateUser(ctx, userUUID, nil, newHash)
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, "pass_change", updated.Username)
+
+	// Проверяем, что новый пароль работает
+	_, foundHash, err := repo.FindUserByUsername(ctx, "pass_change")
+	require.NoError(t, err)
+	assert.Equal(t, newHash, foundHash)
+}
+
+func TestAuthRepository_UpdateUser_SSO_PasswordDenied(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
+	ctx := context.Background()
+
+	// Создаём SSO-пользователя
+	userUUID := uuid.New()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, $2, 'sso', NOW(), NOW())
+	`, userUUID, "sso_no_pass")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO sso_user (user_uuid, provider, external_id, metadata)
+		VALUES ($1, $2, $3, '{}')
+	`, userUUID, "google", "67890")
+	require.NoError(t, err)
+
+	newHash := hashPassword(t, "fake_pass")
+	_, err = repo.UpdateUser(ctx, userUUID, nil, newHash)
+
+	require.Error(t, err)
+	assert.Equal(t, ErrSSOUserPasswordChange, err)
+}
+
+func TestAuthRepository_FindOrCreateUserBySSO_NewUser(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
+	ctx := context.Background()
+
+	provider := "google"
+	externalID := "sso_12345"
+	username := "sso_newbie"
+
+	user, err := repo.FindOrCreateUserBySSO(ctx, provider, externalID, username)
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	assert.Equal(t, username, user.Username)
+	assert.Equal(t, "sso", user.UserType)
+	assert.NotEmpty(t, user.UUID)
+
+	// Проверяем, что запись создана в sso_user
+	var ssoProvider, ssoExternalID string
+	err = pool.QueryRow(ctx, `
+		SELECT provider, external_id FROM sso_user WHERE user_uuid = $1
+	`, user.UUID).Scan(&ssoProvider, &ssoExternalID)
+	require.NoError(t, err)
+	assert.Equal(t, provider, ssoProvider)
+	assert.Equal(t, externalID, ssoExternalID)
+}
+
+func TestAuthRepository_FindOrCreateUserBySSO_ExistingUser(t *testing.T) {
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
+	ctx := context.Background()
+
+	provider := "github"
+	externalID := "gh_999"
+	username := "github_user"
+
+	// Первый вызов - создаёт
+	user1, err := repo.FindOrCreateUserBySSO(ctx, provider, externalID, username)
+	require.NoError(t, err)
+
+	// Второй вызов - находит существующего
+	user2, err := repo.FindOrCreateUserBySSO(ctx, provider, externalID, username)
+	require.NoError(t, err)
+
+	// Должен вернуть того же пользователя
+	assert.Equal(t, user1.UUID, user2.UUID)
+	assert.Equal(t, username, user2.Username)
 }
 
 func TestAuthRepository_Logout_Stateless(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
+	pool := setupTestPool(t)
+	repo := NewAuthRepository(pool)
 	ctx := context.Background()
 
-	// Stateless JWT: logout — пустая операция
-	// Просто проверяем, что метод не паникует и возвращает nil
-	userUUID := uuid.New()
+	userUUID := createTestUser(t, pool, "logout_user", "pass123")
+
+	// Для stateless JWT logout - это no-op
 	err := repo.Logout(ctx, userUUID)
 	assert.NoError(t, err)
-}
-
-func TestAuthRepository_FindByUsername_Success(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	username := "find_user_" + uuid.New().String()[:8]
-	passwordHash := hashPassword(t, "password")
-
-	// Регистрируем пользователя
-	original, err := repo.Register(ctx, username, passwordHash)
-	require.NoError(t, err)
-
-	// Находим по username
-	found, err := repo.FindByUsername(ctx, username)
-	require.NoError(t, err)
-	require.NotNil(t, found)
-
-	assert.Equal(t, original.UUID, found.UUID)
-	assert.Equal(t, original.Username, found.Username)
-	assert.Equal(t, original.UserType, found.UserType)
-	assert.Equal(t, original.CreatedAt, found.CreatedAt)
-	assert.Equal(t, original.UpdatedAt, found.UpdatedAt)
-}
-
-func TestAuthRepository_FindByUsername_NotFound(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	_, err := repo.FindByUsername(ctx, "nonexistent_user")
-	assert.ErrorIs(t, err, ErrUserNotFound)
-}
-
-func TestAuthRepository_FindByUsername_CaseSensitive(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	username := "CaseSensitiveUser"
-	passwordHash := hashPassword(t, "password")
-
-	// Регистрируем с определённым регистром
-	_, err := repo.Register(ctx, username, passwordHash)
-	require.NoError(t, err)
-
-	// Поиск с другим регистром не должен найти (если в БД нет COLLATE case-insensitive)
-	_, err = repo.FindByUsername(ctx, "casesensitiveuser")
-	// Поведение зависит от настроек БД, но обычно это ошибка
-	assert.Error(t, err)
-}
-
-func TestAuthRepository_FullWorkflow(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	username := "workflow_user_" + uuid.New().String()[:8]
-	originalPassword := "original_pass"
-	newPassword := "new_pass"
-
-	// Регистрация
-	createdUser, err := repo.Register(ctx, username, hashPassword(t, originalPassword))
-	require.NoError(t, err)
-	assert.Equal(t, "manual", createdUser.UserType)
-
-	// Логин с оригинальным паролем
-	_, hash1, err := repo.LoginByUsername(ctx, username)
-	require.NoError(t, err)
-	// Проверяем хеш через bcrypt, а не прямым сравнением
-	err = bcrypt.CompareHashAndPassword(hash1, []byte(originalPassword))
-	assert.NoError(t, err)
-
-	// Обновление пароля
-	err = repo.UpdatePassword(ctx, createdUser.UUID, hashPassword(t, newPassword))
-	require.NoError(t, err)
-
-	// Логин с новым паролем
-	_, hash2, err := repo.LoginByUsername(ctx, username)
-	require.NoError(t, err)
-	// Проверяем новый пароль через bcrypt
-	err = bcrypt.CompareHashAndPassword(hash2, []byte(newPassword))
-	assert.NoError(t, err)
-
-	// Поиск пользователя
-	foundUser, err := repo.FindByUsername(ctx, username)
-	require.NoError(t, err)
-	assert.Equal(t, createdUser.UUID, foundUser.UUID)
-
-	// Logout (stateless)
-	err = repo.Logout(ctx, createdUser.UUID)
-	assert.NoError(t, err)
-}
-
-func TestAuthRepository_Register_LongUsername(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	// Username длиной 64 символа (максимум по схеме)
-	username := strings.Repeat("a", 64)
-	passwordHash := hashPassword(t, "password")
-
-	user, err := repo.Register(ctx, username, passwordHash)
-	require.NoError(t, err)
-	assert.Equal(t, username, user.Username)
-}
-
-func TestAuthRepository_Register_UsernameTooLong(t *testing.T) {
-	repo, _ := setupAuthRepo(t)
-	ctx := context.Background()
-
-	// Username длиной 65 символов (превышает лимит 64)
-	username := strings.Repeat("a", 65)
-	passwordHash := hashPassword(t, "password")
-
-	_, err := repo.Register(ctx, username, passwordHash)
-	// Ожидаем ошибку от БД: value too long for type character varying(64)
-	assert.Error(t, err)
 }

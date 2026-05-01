@@ -13,38 +13,14 @@ import (
 )
 
 type TaskRepositoryInterface interface {
-	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID) ([]*model.TaskDB, error)
-	FindByID(ctx context.Context, taskID int) (*model.TaskDB, error)
-	Create(ctx context.Context, input CreateTaskInput) (*model.TaskDB, error)
-	Update(ctx context.Context, taskID int, updates TaskUpdates) (*model.TaskDB, error)
-	Delete(ctx context.Context, taskID int) error
-	Restore(ctx context.Context, taskID int) error
-	AddAssignee(ctx context.Context, taskID int, userUUID uuid.UUID) error
-	RemoveAssignee(ctx context.Context, taskID int, userUUID uuid.UUID) error
-	GetAssignees(ctx context.Context, taskID int) ([]uuid.UUID, error)
-}
-
-// структура для создания таски
-type CreateTaskInput struct {
-	ProjectUUID uuid.UUID
-	ColumnID    int
-	Title       string
-	Description string
-	CreatorUUID uuid.UUID
-	StatusID    *int // опционально
-	StartDate   *time.Time
-	EndDate     *time.Time
-}
-
-// структура для апдейта таски
-type TaskUpdates struct {
-	Title       *string
-	Description *string
-	ColumnID    *int
-	StatusID    *int
-	StartDate   *time.Time
-	EndDate     *time.Time
-	ArchivedAt  *time.Time
+	Create(ctx context.Context, projectUUID uuid.UUID, columnID int, creatorUUID uuid.UUID, title string, description string, startDate *time.Time, endDate *time.Time) (*model.TaskDB, error)
+	FindByID(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) (*model.TaskDB, error)
+	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, archived *bool) ([]*model.TaskDB, error)
+	FindByColumn(ctx context.Context, columnID int, userUUID uuid.UUID) ([]*model.TaskDB, error)
+	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate **time.Time, endDate **time.Time, columnID *int, archived *bool) (*model.TaskDB, error)
+	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
+	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 
 type TaskRepository struct {
@@ -55,21 +31,109 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 	return &TaskRepository{db: db}
 }
 
-// FindByProjectUUID возвращает все задачи проекта (кроме удалённых)
-// GET /projects/{projectUUID}/tasks
+func (r *TaskRepository) Create(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	columnID int,
+	creatorUUID uuid.UUID,
+	title string,
+	description string,
+	startDate *time.Time,
+	endDate *time.Time,
+) (*model.TaskDB, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("repository: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var colProjectUUID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, columnID).Scan(&colProjectUUID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrInvalidColumn
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repository: check column: %w", err)
+	}
+	if colProjectUUID != projectUUID {
+		return nil, ErrInvalidColumn
+	}
+	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, creatorUUID); err != nil {
+		return nil, err
+	}
+
+	var task model.TaskDB
+	err = tx.QueryRow(ctx, `
+		INSERT INTO tasks (column_id, creator_uuid, title, description, start_date, end_date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+		RETURNING id, column_id, status_id, creator_uuid, title, description, deleted_at, archived_at, created_at, updated_at, start_date, end_date
+	`, columnID, creatorUUID, title, description, startDate, endDate, time.Now()).Scan(
+		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
+		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("repository: create task: %w", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("repository: commit transaction: %w", err)
+	}
+	return &task, nil
+}
+
+func (r *TaskRepository) FindByID(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	taskID int,
+	userUUID uuid.UUID,
+) (*model.TaskDB, error) {
+	var task model.TaskDB
+	err := r.db.QueryRow(ctx, `
+		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
+		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		FROM tasks t
+		JOIN project_column pc ON t.column_id = pc.id
+		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
+		WHERE t.id = $1 AND pc.project_uuid = $2 AND pm.user_uuid = $3
+	`, taskID, projectUUID, userUUID).Scan(
+		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
+		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrTaskNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repository: find task by id: %w", err)
+	}
+	return &task, nil
+}
+
 func (r *TaskRepository) FindByProjectUUID(
 	ctx context.Context,
 	projectUUID uuid.UUID,
+	userUUID uuid.UUID,
+	archived *bool,
 ) ([]*model.TaskDB, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT t.id, t.column_id, t.status_id, t.creator_uuid,
-		       t.title, t.description, t.deleted_at, t.archived_at,
-		       t.created_at, t.updated_at, t.start_date, t.end_date
+	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+		return nil, err
+	}
+	query := `
+		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
+		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		WHERE pc.project_uuid = $1 AND t.deleted_at IS NULL
-		ORDER BY t.created_at ASC
-	`, projectUUID)
+	`
+	args := []interface{}{projectUUID}
+	if archived != nil {
+		if *archived {
+			query += " AND t.archived_at IS NOT NULL"
+		} else {
+			query += " AND t.archived_at IS NULL"
+		}
+	}
+	query += " ORDER BY t.created_at DESC"
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("repository: find tasks by project: %w", err)
 	}
@@ -78,307 +142,237 @@ func (r *TaskRepository) FindByProjectUUID(
 	var tasks []*model.TaskDB
 	for rows.Next() {
 		var task model.TaskDB
-		err := rows.Scan(
-			&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID,
-			&task.Title, &task.Description, &task.DeletedAt, &task.ArchivedAt,
-			&task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
-		)
-		if err != nil {
+		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
+			&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
 			return nil, fmt.Errorf("repository: scan task: %w", err)
 		}
 		tasks = append(tasks, &task)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("repository: iterate tasks: %w", err)
 	}
-
 	return tasks, nil
 }
 
-// FindByID возвращает задачу по ID (включая удалённые/архивные)
-// GET /projects/{projectUUID}/task/{taskID}
-func (r *TaskRepository) FindByID(
+func (r *TaskRepository) FindByColumn(
 	ctx context.Context,
-	taskID int,
-) (*model.TaskDB, error) {
-	var task model.TaskDB
-
-	err := r.db.QueryRow(ctx, `
-		SELECT id, column_id, status_id, creator_uuid,
-		       title, description, deleted_at, archived_at,
-		       created_at, updated_at, start_date, end_date
-		FROM tasks
-		WHERE id = $1
-	`, taskID).Scan(
-		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID,
-		&task.Title, &task.Description, &task.DeletedAt, &task.ArchivedAt,
-		&task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
-	)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrTaskNotFound
-	}
+	columnID int,
+	userUUID uuid.UUID,
+) ([]*model.TaskDB, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
+		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		FROM tasks t
+		JOIN project_column pc ON t.column_id = pc.id
+		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
+		WHERE t.column_id = $1 AND pm.user_uuid = $2 AND t.deleted_at IS NULL
+		ORDER BY t.created_at DESC
+	`, columnID, userUUID)
 	if err != nil {
-		return nil, fmt.Errorf("repository: find task by id: %w", err)
+		return nil, fmt.Errorf("repository: find tasks by column: %w", err)
 	}
+	defer rows.Close()
 
-	return &task, nil
+	var tasks []*model.TaskDB
+	for rows.Next() {
+		var task model.TaskDB
+		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
+			&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
+			return nil, fmt.Errorf("repository: scan task: %w", err)
+		}
+		tasks = append(tasks, &task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: iterate tasks: %w", err)
+	}
+	return tasks, nil
 }
 
-// Create создаёт новую задачу
-// POST /projects/{projectUUID}/task
-func (r *TaskRepository) Create(
-	ctx context.Context,
-	input CreateTaskInput,
-) (*model.TaskDB, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("repository: begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	var task model.TaskDB
-	now := time.Now()
-
-	// Создаём задачу
-	err = tx.QueryRow(ctx, `
-		INSERT INTO tasks (
-			column_id, status_id, creator_uuid, title, description,
-			start_date, end_date, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-		RETURNING id, column_id, status_id, creator_uuid, title, description,
-		          deleted_at, archived_at, created_at, updated_at, start_date, end_date
-	`, input.ColumnID, input.StatusID, input.CreatorUUID, input.Title, input.Description,
-		input.StartDate, input.EndDate, now).Scan(
-		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID,
-		&task.Title, &task.Description, &task.DeletedAt, &task.ArchivedAt,
-		&task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("repository: create task: %w", err)
-	}
-
-	if err = tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("repository: commit transaction: %w", err)
-	}
-
-	return &task, nil
-}
-
-// Update обновляет задачу (частичное обновление)
-// PATCH /projects/{projectUUID}/task/{taskID}
 func (r *TaskRepository) Update(
 	ctx context.Context,
+	projectUUID uuid.UUID,
 	taskID int,
-	updates TaskUpdates,
+	userUUID uuid.UUID,
+	title *string,
+	description *string,
+	startDate **time.Time,
+	endDate **time.Time,
+	columnID *int,
+	archived *bool,
 ) (*model.TaskDB, error) {
-	if updates.isEmpty() {
-		return r.FindByID(ctx, taskID)
-	}
-
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("repository: begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	updatesSQL := "UPDATE tasks SET updated_at = NOW()"
-	args := []interface{}{}
-	paramIndex := 0 // ← Считаем ТОЛЬКО реальные параметры
+	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+		return nil, err
+	}
 
-	// Title
-	if updates.Title != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", title = $%d", paramIndex)
-		args = append(args, *updates.Title)
+	query := "UPDATE tasks SET updated_at = NOW()"
+	args := []interface{}{}
+	argIdx := 1
+
+	if title != nil {
+		args = append(args, *title)
+		query += fmt.Sprintf(", title = $%d", argIdx)
+		argIdx++
 	}
-	// Description
-	if updates.Description != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", description = $%d", paramIndex)
-		args = append(args, *updates.Description)
+	if description != nil {
+		args = append(args, *description)
+		query += fmt.Sprintf(", description = $%d", argIdx)
+		argIdx++
 	}
-	// ColumnID
-	if updates.ColumnID != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", column_id = $%d", paramIndex)
-		args = append(args, *updates.ColumnID)
+	if startDate != nil && *startDate != nil {
+		args = append(args, **startDate)
+		query += fmt.Sprintf(", start_date = $%d", argIdx)
+		argIdx++
+	} else if startDate != nil {
+		query += ", start_date = NULL"
 	}
-	// StatusID
-	if updates.StatusID != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", status_id = $%d", paramIndex)
-		args = append(args, *updates.StatusID)
+	if endDate != nil && *endDate != nil {
+		args = append(args, **endDate)
+		query += fmt.Sprintf(", end_date = $%d", argIdx)
+		argIdx++
+	} else if endDate != nil {
+		query += ", end_date = NULL"
 	}
-	// StartDate
-	if updates.StartDate != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", start_date = $%d", paramIndex)
-		args = append(args, *updates.StartDate)
+	if columnID != nil {
+		var targetProjectUUID uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, *columnID).Scan(&targetProjectUUID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrInvalidColumn
+		}
+		if err != nil {
+			return nil, fmt.Errorf("repository: check target column: %w", err)
+		}
+		if targetProjectUUID != projectUUID {
+			return nil, ErrInvalidColumn
+		}
+		args = append(args, *columnID)
+		query += fmt.Sprintf(", column_id = $%d", argIdx)
+		argIdx++
 	}
-	// EndDate
-	if updates.EndDate != nil {
-		paramIndex++
-		updatesSQL += fmt.Sprintf(", end_date = $%d", paramIndex)
-		args = append(args, *updates.EndDate)
-	}
-	// ArchivedAt
-	if updates.ArchivedAt != nil {
-		if updates.ArchivedAt.IsZero() {
-			updatesSQL += ", archived_at = NULL" // ← Без параметра!
+	if archived != nil {
+		if *archived {
+			query += ", archived_at = NOW()"
 		} else {
-			paramIndex++
-			updatesSQL += fmt.Sprintf(", archived_at = $%d", paramIndex)
-			args = append(args, *updates.ArchivedAt)
+			query += ", archived_at = NULL"
 		}
 	}
 
-	// WHERE clause
-	paramIndex++
-	updatesSQL += fmt.Sprintf(" WHERE id = $%d RETURNING id, column_id, status_id, creator_uuid, title, description, deleted_at, archived_at, created_at, updated_at, start_date, end_date", paramIndex)
-	args = append(args, taskID)
+	args = append(args, taskID, projectUUID)
+	query += fmt.Sprintf(" WHERE id = $%d AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $%d) AND deleted_at IS NULL", argIdx, argIdx+1)
+	query += " RETURNING id, column_id, status_id, creator_uuid, title, description, deleted_at, archived_at, created_at, updated_at, start_date, end_date"
 
 	var task model.TaskDB
-	err = tx.QueryRow(ctx, updatesSQL, args...).Scan(
-		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID,
-		&task.Title, &task.Description, &task.DeletedAt, &task.ArchivedAt,
-		&task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
-	)
-
+	err = tx.QueryRow(ctx, query, args...).Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
+		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTaskNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("repository: update task: %w", err)
 	}
-
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
-
 	return &task, nil
 }
 
-// isEmpty проверяет пустой ли объект обновлений
-func (u TaskUpdates) isEmpty() bool {
-	return u.Title == nil && u.Description == nil && u.ColumnID == nil &&
-		u.StatusID == nil && u.StartDate == nil && u.EndDate == nil && u.ArchivedAt == nil
-}
+func (r *TaskRepository) Delete(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	taskID int,
+	userUUID uuid.UUID,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("repository: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-// Delete выполняет soft delete задачи
-// DELETE /projects/{projectUUID}/task/{taskID}
-func (r *TaskRepository) Delete(ctx context.Context, taskID int) error {
-	result, err := r.db.Exec(ctx, `
+	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 		UPDATE tasks SET deleted_at = NOW()
-		WHERE id = $1 AND deleted_at IS NULL
-	`, taskID)
+		WHERE id = $1 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $2) AND deleted_at IS NULL
+	`, taskID, projectUUID)
 	if err != nil {
 		return fmt.Errorf("repository: soft delete task: %w", err)
 	}
-	if result.RowsAffected() == 0 {
-		var exists bool
-		err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`, taskID).Scan(&exists)
-		if err != nil {
-			return fmt.Errorf("repository: check task exists: %w", err)
-		}
-		if !exists {
-			return ErrTaskNotFound
-		}
-		return ErrTaskDeleted
-	}
-	return nil
+	return tx.Commit(ctx)
 }
 
-// Restore восстанавливает задачу из корзины
-// POST /projects/{projectUUID}/task/{taskID}/restore
-func (r *TaskRepository) Restore(ctx context.Context, taskID int) error {
-	result, err := r.db.Exec(ctx, `
-		UPDATE tasks SET deleted_at = NULL
-		WHERE id = $1 AND deleted_at IS NOT NULL
-	`, taskID)
-	if err != nil {
-		return fmt.Errorf("repository: restore task: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		var exists bool
-		err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`, taskID).Scan(&exists)
-		if err != nil {
-			return fmt.Errorf("repository: check task exists: %w", err)
-		}
-		if !exists {
-			return ErrTaskNotFound
-		}
-		return nil
-	}
-	return nil
-}
-
-// AddAssignee добавляет исполнителя к задаче
-// POST /tasks/{taskID}/assignees
-func (r *TaskRepository) AddAssignee(
+func (r *TaskRepository) Move(
 	ctx context.Context,
+	projectUUID uuid.UUID,
 	taskID int,
+	targetColumnID int,
 	userUUID uuid.UUID,
 ) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO task_assignee (task_id, user_uuid, assigned_at)
-		VALUES ($1, $2, NOW())
-		ON CONFLICT (task_id, user_uuid) DO NOTHING
-	`, taskID, userUUID)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("repository: add assignee: %w", err)
+		return fmt.Errorf("repository: begin transaction: %w", err)
 	}
-	return nil
+	defer tx.Rollback(ctx)
+
+	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+		return err
+	}
+	var targetProjectUUID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, targetColumnID).Scan(&targetProjectUUID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalidColumn
+	}
+	if err != nil {
+		return fmt.Errorf("repository: check target column: %w", err)
+	}
+	if targetProjectUUID != projectUUID {
+		return ErrInvalidColumn
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE tasks SET column_id = $1, updated_at = NOW()
+		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3) AND deleted_at IS NULL
+	`, targetColumnID, taskID, projectUUID)
+	if err != nil {
+		return fmt.Errorf("repository: move task: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
-// RemoveAssignee удаляет исполнителя из задачи
-// DELETE /tasks/{taskID}/assignees/{userUUID}
-func (r *TaskRepository) RemoveAssignee(
+func (r *TaskRepository) Archive(
 	ctx context.Context,
+	projectUUID uuid.UUID,
 	taskID int,
 	userUUID uuid.UUID,
+	archive bool,
 ) error {
-	result, err := r.db.Exec(ctx, `
-		DELETE FROM task_assignee
-		WHERE task_id = $1 AND user_uuid = $2
-	`, taskID, userUUID)
-	if err != nil {
-		return fmt.Errorf("repository: remove assignee: %w", err)
+	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+		return err
 	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("repository: assignee not found")
+	query := `
+		UPDATE tasks
+		SET archived_at = CASE WHEN $1 THEN NOW() ELSE NULL END, updated_at = NOW()
+		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3) AND deleted_at IS NULL
+	`
+	_, err := r.db.Exec(ctx, query, archive, taskID, projectUUID)
+	if err != nil {
+		return fmt.Errorf("repository: archive task: %w", err)
 	}
 	return nil
 }
 
-// GetAssignees возвращает список UUID исполнителей задачи
-// GET /tasks/{taskID}/assignees
-func (r *TaskRepository) GetAssignees(
-	ctx context.Context,
-	taskID int,
-) ([]uuid.UUID, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT user_uuid FROM task_assignee WHERE task_id = $1
-	`, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("repository: get assignees: %w", err)
-	}
-	defer rows.Close()
+func (r *TaskRepository) checkUserAccess(ctx context.Context, projectUUID, userUUID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	return exists, err
+}
 
-	var assignees []uuid.UUID
-	for rows.Next() {
-		var userUUID uuid.UUID
-		err := rows.Scan(&userUUID)
-		if err != nil {
-			return nil, fmt.Errorf("repository: scan assignee: %w", err)
-		}
-		assignees = append(assignees, userUUID)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("repository: iterate assignees: %w", err)
-	}
-
-	return assignees, nil
+func (r *TaskRepository) checkUserAccessTx(ctx context.Context, tx pgx.Tx, projectUUID, userUUID uuid.UUID) (bool, error) {
+	var exists bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	return exists, err
 }

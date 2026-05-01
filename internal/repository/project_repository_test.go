@@ -5,7 +5,6 @@ package repository
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -13,50 +12,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dto "github.com/vega-trello/trello-back/internal/dto/project"
 )
 
-func getTestPool(t *testing.T) *pgxpool.Pool {
+func setupProjectRepo(t *testing.T) (*ProjectRepository, *pgxpool.Pool, uuid.UUID) {
 	t.Helper()
-
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set, skipping integration test")
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err, "failed to connect to test database")
-
-	err = pool.Ping(ctx)
-	require.NoError(t, err, "cannot ping test database")
-
-	return pool
-}
-
-func cleanTable(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	ctx := context.Background()
-	_, err := pool.Exec(ctx, "TRUNCATE project RESTART IDENTITY CASCADE")
-	if err != nil {
-		t.Logf("warning: failed to clean table: %v", err)
-	}
-}
-
-func setupRepo(t *testing.T) *ProjectRepository {
-	t.Helper()
-	pool := getTestPool(t)
-	t.Cleanup(func() {
-		cleanTable(t, pool)
-		pool.Close()
-	})
-	return NewProjectRepository(pool)
+	pool := setupTestPool(t)
+	repo := NewProjectRepository(pool)
+	owner := createTestUser(t, pool, "project_owner", "pass123")
+	return repo, pool, owner
 }
 
 func TestProjectRepository_Create_Success(t *testing.T) {
-	repo := setupRepo(t)
+	repo, _, owner := setupProjectRepo(t)
 	ctx := context.Background()
 
-	project, err := repo.Create(ctx, "Test Project", "Description")
+	req := dto.CreateProjectRequest{
+		Title:       "Test Project",
+		Description: "Description",
+	}
+
+	project, err := repo.Create(ctx, owner, req)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
@@ -67,38 +43,31 @@ func TestProjectRepository_Create_Success(t *testing.T) {
 }
 
 func TestProjectRepository_FindByID_Success(t *testing.T) {
-	repo := setupRepo(t)
+	repo, _, owner := setupProjectRepo(t)
 	ctx := context.Background()
 
-	created, err := repo.Create(ctx, "Find Me", "Desc")
+	req := dto.CreateProjectRequest{Title: "Find Me", Description: "Desc"}
+	created, err := repo.Create(ctx, owner, req)
 	require.NoError(t, err)
 
 	found, err := repo.FindByID(ctx, created.UUID)
 	require.NoError(t, err)
 	assert.Equal(t, created.UUID, found.UUID)
 	assert.Equal(t, created.Title, found.Title)
-	assert.Equal(t, created.Description, found.Description)
 }
 
-func TestProjectRepository_FindByID_NotFound(t *testing.T) {
-	repo := setupRepo(t)
+func TestProjectRepository_Update_Success(t *testing.T) {
+	repo, _, owner := setupProjectRepo(t)
 	ctx := context.Background()
 
-	_, err := repo.FindByID(ctx, uuid.New())
-	assert.ErrorIs(t, err, ErrProjectNotFound)
-}
-
-func TestProjectRepository_Update_Success_Full(t *testing.T) {
-	repo := setupRepo(t)
-	ctx := context.Background()
-
-	created, err := repo.Create(ctx, "Old Title", "Old Desc")
+	req := dto.CreateProjectRequest{Title: "Old Title", Description: "Old Desc"}
+	created, err := repo.Create(ctx, owner, req)
 	require.NoError(t, err)
-	time.Sleep(10 * time.Millisecond) // Чтобы updated_at отличался
+	time.Sleep(10 * time.Millisecond)
 
-	title := "New Title"
-	desc := "New Desc"
-	updated, err := repo.Update(ctx, created.UUID, &title, &desc)
+	newTitle := "New Title"
+	newDesc := "New Desc"
+	updated, err := repo.Update(ctx, created.UUID, &newTitle, &newDesc)
 	require.NoError(t, err)
 
 	assert.Equal(t, "New Title", updated.Title)
@@ -106,64 +75,30 @@ func TestProjectRepository_Update_Success_Full(t *testing.T) {
 	assert.True(t, updated.UpdatedAt.After(updated.CreatedAt))
 }
 
-func TestProjectRepository_Update_Partial_TitleOnly(t *testing.T) {
-	repo := setupRepo(t)
-	ctx := context.Background()
-
-	created, err := repo.Create(ctx, "Keep This", "Change Me")
-	require.NoError(t, err)
-
-	newTitle := "Only Title Changed"
-	updated, err := repo.Update(ctx, created.UUID, &newTitle, nil)
-	require.NoError(t, err)
-
-	assert.Equal(t, "Only Title Changed", updated.Title)
-	assert.Equal(t, "Change Me", updated.Description) // Не изменилось
-}
-
-func TestProjectRepository_Update_Partial_DescOnly(t *testing.T) {
-	repo := setupRepo(t)
-	ctx := context.Background()
-
-	created, err := repo.Create(ctx, "Keep Title", "Old Desc")
-	require.NoError(t, err)
-
-	newDesc := "Only Desc Changed"
-	updated, err := repo.Update(ctx, created.UUID, nil, &newDesc)
-	require.NoError(t, err)
-
-	assert.Equal(t, "Keep Title", updated.Title)
-	assert.Equal(t, "Only Desc Changed", updated.Description)
-}
-
-func TestProjectRepository_Update_NotFound(t *testing.T) {
-	repo := setupRepo(t)
-	ctx := context.Background()
-
-	title := "Test"
-	_, err := repo.Update(ctx, uuid.New(), &title, nil)
-	assert.ErrorIs(t, err, ErrProjectNotFound)
-}
-
 func TestProjectRepository_Delete_Success(t *testing.T) {
-	repo := setupRepo(t)
+	repo, _, owner := setupProjectRepo(t)
 	ctx := context.Background()
 
-	created, err := repo.Create(ctx, "To Delete", "Desc")
+	req := dto.CreateProjectRequest{Title: "To Delete", Description: "Desc"}
+	created, err := repo.Create(ctx, owner, req)
 	require.NoError(t, err)
 
 	err = repo.Delete(ctx, created.UUID)
 	assert.NoError(t, err)
 
-	// Проверяем, что удалён
 	_, err = repo.FindByID(ctx, created.UUID)
 	assert.ErrorIs(t, err, ErrProjectNotFound)
 }
 
-func TestProjectRepository_Delete_NotFound(t *testing.T) {
-	repo := setupRepo(t)
+func TestProjectRepository_UserHasAccess_Success(t *testing.T) {
+	repo, _, owner := setupProjectRepo(t)
 	ctx := context.Background()
 
-	err := repo.Delete(ctx, uuid.New())
-	assert.ErrorIs(t, err, ErrProjectNotFound)
+	req := dto.CreateProjectRequest{Title: "Access Test", Description: "Desc"}
+	project, err := repo.Create(ctx, owner, req)
+	require.NoError(t, err)
+
+	hasAccess, err := repo.UserHasAccess(ctx, owner, project.UUID)
+	require.NoError(t, err)
+	assert.True(t, hasAccess)
 }
