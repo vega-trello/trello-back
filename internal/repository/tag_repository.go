@@ -11,11 +11,12 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
+// TagRepositoryInterface — контракт репозитория
 type TagRepositoryInterface interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, color int) (*model.Tag, error)
+	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
 	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Tag, error)
-	FindByTask(ctx context.Context, taskID int, userUUID uuid.UUID) ([]*model.Tag, error)
-	Update(ctx context.Context, tagID int, userUUID uuid.UUID, name *string, color *int) (*model.Tag, error)
+	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*model.Tag, error)
+	Update(ctx context.Context, tagID int, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
 	Delete(ctx context.Context, tagID int, userUUID uuid.UUID) error
 	AddToTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
 	RemoveFromTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
@@ -34,7 +35,7 @@ func (r *TagRepository) Create(
 	projectUUID uuid.UUID,
 	userUUID uuid.UUID,
 	name string,
-	color int,
+	color string,
 ) (*model.Tag, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -48,10 +49,12 @@ func (r *TagRepository) Create(
 
 	var tag model.Tag
 	err = tx.QueryRow(ctx, `
-		INSERT INTO tag (project_uuid, name, color, created_at)
-		VALUES ($1, $2, $3, NOW())
-		RETURNING id, project_uuid, name, color, created_at
-	`, projectUUID, name, color).Scan(&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt)
+		INSERT INTO tag (project_uuid, name, color, created_at, updated_at)
+		VALUES ($1, $2, $3, NOW(), NOW())
+		RETURNING id, project_uuid, name, color, created_at, updated_at
+	`, projectUUID, name, color).Scan(
+		&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("repository: create tag: %w", err)
 	}
@@ -70,7 +73,7 @@ func (r *TagRepository) FindByProjectUUID(
 		return nil, err
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT id, project_uuid, name, color, created_at
+		SELECT id, project_uuid, name, color, created_at, updated_at
 		FROM tag
 		WHERE project_uuid = $1
 		ORDER BY name ASC
@@ -83,7 +86,7 @@ func (r *TagRepository) FindByProjectUUID(
 	var tags []*model.Tag
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("repository: scan tag: %w", err)
 		}
 		tags = append(tags, &tag)
@@ -96,19 +99,22 @@ func (r *TagRepository) FindByProjectUUID(
 
 func (r *TagRepository) FindByTask(
 	ctx context.Context,
+	projectUUID uuid.UUID,
 	taskID int,
 	userUUID uuid.UUID,
 ) ([]*model.Tag, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT t.id, t.project_uuid, t.name, t.color, t.created_at
+		SELECT t.id, t.project_uuid, t.name, t.color, t.created_at, t.updated_at
 		FROM tag t
 		JOIN task_tag tt ON t.id = tt.tag_id
 		JOIN tasks ta ON tt.task_id = ta.id
 		JOIN project_column pc ON ta.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
-		WHERE tt.task_id = $1 AND pm.user_uuid = $2
+		WHERE tt.task_id = $1 
+		  AND pc.project_uuid = $2 
+		  AND pm.user_uuid = $3     
 		ORDER BY t.name ASC
-	`, taskID, userUUID)
+	`, taskID, projectUUID, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("repository: find tags by task: %w", err)
 	}
@@ -117,7 +123,7 @@ func (r *TagRepository) FindByTask(
 	var tags []*model.Tag
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("repository: scan tag: %w", err)
 		}
 		tags = append(tags, &tag)
@@ -132,59 +138,37 @@ func (r *TagRepository) Update(
 	ctx context.Context,
 	tagID int,
 	userUUID uuid.UUID,
-	name *string,
-	color *int,
+	name string,
+	color string,
 ) (*model.Tag, error) {
-	var existing model.Tag
-	err := r.db.QueryRow(ctx, `SELECT id, project_uuid, name, color, created_at FROM tag WHERE id = $1`, tagID).Scan(
-		&existing.ID, &existing.ProjectUUID, &existing.Name, &existing.Color, &existing.CreatedAt)
+	var projectUUID uuid.UUID
+	err := r.db.QueryRow(ctx, `SELECT project_uuid FROM tag WHERE id = $1`, tagID).Scan(&projectUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTagNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("repository: find existing tag: %w", err)
+		return nil, fmt.Errorf("repository: find tag project: %w", err)
 	}
-	if err := r.ensureUserAccess(ctx, existing.ProjectUUID, userUUID); err != nil {
+	if err := r.ensureUserAccess(ctx, projectUUID, userUUID); err != nil {
 		return nil, err
 	}
 
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("repository: begin transaction: %w", err)
+	var tag model.Tag
+	err = r.db.QueryRow(ctx, `
+		UPDATE tag
+		SET name = $1, color = $2, updated_at = NOW() 
+		WHERE id = $3
+		RETURNING id, project_uuid, name, color, created_at, updated_at
+	`, name, color, tagID).Scan(
+		&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrTagNotFound
 	}
-	defer tx.Rollback(ctx)
-
-	query := "UPDATE tag SET "
-	args := []interface{}{}
-	argIdx := 1
-	if name != nil {
-		args = append(args, *name)
-		query += fmt.Sprintf("name = $%d", argIdx)
-		argIdx++
-	}
-	if color != nil {
-		if argIdx > 1 {
-			query += ", "
-		}
-		args = append(args, *color)
-		query += fmt.Sprintf("color = $%d", argIdx)
-		argIdx++
-	}
-	if argIdx == 1 {
-		return &existing, nil
-	}
-	args = append(args, tagID)
-	query += fmt.Sprintf(" WHERE id = $%d RETURNING id, project_uuid, name, color, created_at", argIdx)
-
-	var updated model.Tag
-	err = tx.QueryRow(ctx, query, args...).Scan(&updated.ID, &updated.ProjectUUID, &updated.Name, &updated.Color, &updated.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("repository: update tag: %w", err)
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("repository: commit transaction: %w", err)
-	}
-	return &updated, nil
+	return &tag, nil
 }
 
 func (r *TagRepository) Delete(
@@ -226,6 +210,7 @@ func (r *TagRepository) AddToTask(
 	if err := r.ensureUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
 		return err
 	}
+
 	var tagProjectUUID uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT project_uuid FROM tag WHERE id = $1`, tagID).Scan(&tagProjectUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -237,6 +222,7 @@ func (r *TagRepository) AddToTask(
 	if tagProjectUUID != projectUUID {
 		return errors.New("tag does not belong to this project")
 	}
+
 	var taskProjectUUID uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT pc.project_uuid FROM tasks t JOIN project_column pc ON t.column_id = pc.id WHERE t.id = $1`, taskID).Scan(&taskProjectUUID)
 	if errors.Is(err, pgx.ErrNoRows) {

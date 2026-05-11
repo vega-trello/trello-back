@@ -5,21 +5,21 @@ import (
 )
 
 type Role struct {
-	ID          int       `db:"id"`
-	ProjectUUID uuid.UUID `db:"project_uuid"`
-	Name        string    `db:"name"`
-	Description *string   `db:"description"`
-	// CreatedAt   time.Time `db:"created_at"`
-}
-type Permission struct {
-	ID          int    `db:"id"`
-	Name        string `db:"name"`
-	Description string `db:"description"`
+	ID          int        `db:"id" json:"id"`
+	ProjectUUID *uuid.UUID `db:"project_uuid" json:"project_uuid"` // nullable для системных ролей
+	Name        string     `db:"name" json:"name"`                 // VARCHAR(32)
+	Description *string    `db:"description" json:"description"`   // nullable
 }
 
 type RolePermission struct {
 	RoleID       int `db:"role_id"`
 	PermissionID int `db:"permission_id"`
+}
+
+type Permission struct {
+	ID          int    `db:"id" json:"id"`
+	Name        string `db:"name" json:"name"`
+	Description string `db:"description" json:"description"`
 }
 
 // 1=owner, 2=admin, 3=member, 4=viewer

@@ -4,9 +4,10 @@
 CREATE TABLE tag (
     id SERIAL PRIMARY KEY,
     project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
-    name VARCHAR(64) NOT NULL,
-    color INTEGER NOT NULL,  --парсить в го
+    name VARCHAR(32) NOT NULL,
+    color VARCHAR(7) NOT NULL CHECK (color ~ '^#[0-9A-Fa-f]{6}$'),  --парсить в го
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(project_uuid, name)
 );
 

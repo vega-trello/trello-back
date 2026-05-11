@@ -66,10 +66,10 @@ func (r *TaskRepository) Create(
 	err = tx.QueryRow(ctx, `
 		INSERT INTO tasks (column_id, creator_uuid, title, description, start_date, end_date, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-		RETURNING id, column_id, status_id, creator_uuid, title, description, deleted_at, archived_at, created_at, updated_at, start_date, end_date
+		RETURNING id, column_id, status_id, creator_uuid, title, description, archived_at, created_at, updated_at, start_date, end_date
 	`, columnID, creatorUUID, title, description, startDate, endDate, time.Now()).Scan(
 		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("repository: create task: %w", err)
@@ -89,14 +89,14 @@ func (r *TaskRepository) FindByID(
 	var task model.TaskDB
 	err := r.db.QueryRow(ctx, `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
 		WHERE t.id = $1 AND pc.project_uuid = $2 AND pm.user_uuid = $3
 	`, taskID, projectUUID, userUUID).Scan(
 		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTaskNotFound
@@ -118,10 +118,10 @@ func (r *TaskRepository) FindByProjectUUID(
 	}
 	query := `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
-		WHERE pc.project_uuid = $1 AND t.deleted_at IS NULL
+		WHERE pc.project_uuid = $1
 	`
 	args := []interface{}{projectUUID}
 	if archived != nil {
@@ -143,7 +143,7 @@ func (r *TaskRepository) FindByProjectUUID(
 	for rows.Next() {
 		var task model.TaskDB
 		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-			&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
+			&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
 			return nil, fmt.Errorf("repository: scan task: %w", err)
 		}
 		tasks = append(tasks, &task)
@@ -161,11 +161,11 @@ func (r *TaskRepository) FindByColumn(
 ) ([]*model.TaskDB, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.deleted_at, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
-		WHERE t.column_id = $1 AND pm.user_uuid = $2 AND t.deleted_at IS NULL
+		WHERE t.column_id = $1 AND pm.user_uuid = $2
 		ORDER BY t.created_at DESC
 	`, columnID, userUUID)
 	if err != nil {
@@ -177,7 +177,7 @@ func (r *TaskRepository) FindByColumn(
 	for rows.Next() {
 		var task model.TaskDB
 		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-			&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
+			&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
 			return nil, fmt.Errorf("repository: scan task: %w", err)
 		}
 		tasks = append(tasks, &task)
@@ -263,12 +263,12 @@ func (r *TaskRepository) Update(
 	}
 
 	args = append(args, taskID, projectUUID)
-	query += fmt.Sprintf(" WHERE id = $%d AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $%d) AND deleted_at IS NULL", argIdx, argIdx+1)
-	query += " RETURNING id, column_id, status_id, creator_uuid, title, description, deleted_at, archived_at, created_at, updated_at, start_date, end_date"
+	query += fmt.Sprintf(" WHERE id = $%d AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $%d)", argIdx, argIdx+1)
+	query += " RETURNING id, column_id, status_id, creator_uuid, title, description, archived_at, created_at, updated_at, start_date, end_date"
 
 	var task model.TaskDB
 	err = tx.QueryRow(ctx, query, args...).Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.DeletedAt, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate)
+		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTaskNotFound
 	}
@@ -297,11 +297,11 @@ func (r *TaskRepository) Delete(
 		return err
 	}
 	_, err = tx.Exec(ctx, `
-		UPDATE tasks SET deleted_at = NOW()
-		WHERE id = $1 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $2) AND deleted_at IS NULL
+		DELETE FROM tasks
+		WHERE id = $1 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $2)
 	`, taskID, projectUUID)
 	if err != nil {
-		return fmt.Errorf("repository: soft delete task: %w", err)
+		return fmt.Errorf("repository: delete task: %w", err)
 	}
 	return tx.Commit(ctx)
 }
@@ -335,7 +335,7 @@ func (r *TaskRepository) Move(
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE tasks SET column_id = $1, updated_at = NOW()
-		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3) AND deleted_at IS NULL
+		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3)
 	`, targetColumnID, taskID, projectUUID)
 	if err != nil {
 		return fmt.Errorf("repository: move task: %w", err)
@@ -356,7 +356,7 @@ func (r *TaskRepository) Archive(
 	query := `
 		UPDATE tasks
 		SET archived_at = CASE WHEN $1 THEN NOW() ELSE NULL END, updated_at = NOW()
-		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3) AND deleted_at IS NULL
+		WHERE id = $2 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $3)
 	`
 	_, err := r.db.Exec(ctx, query, archive, taskID, projectUUID)
 	if err != nil {

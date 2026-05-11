@@ -35,6 +35,8 @@ func TestTaskRepository_Create_Success(t *testing.T) {
 	assert.Equal(t, columnID, task.ColumnID)
 	assert.Equal(t, "New Task", task.Title)
 	assert.Equal(t, owner, task.CreatorUUID)
+	assert.False(t, task.CreatedAt.IsZero())
+	assert.False(t, task.UpdatedAt.IsZero())
 }
 
 func TestTaskRepository_FindByProjectUUID_Success(t *testing.T) {
@@ -73,6 +75,7 @@ func TestTaskRepository_Update_Success(t *testing.T) {
 	columnID := createTestColumn(t, pool, projectUUID, 0)
 
 	task, _ := repo.Create(ctx, projectUUID, columnID, owner, "Old Title", "Old Desc", nil, nil)
+	oldUpdatedAt := task.UpdatedAt
 
 	newTitle := "New Title"
 	newDesc := "Updated description"
@@ -81,6 +84,7 @@ func TestTaskRepository_Update_Success(t *testing.T) {
 
 	assert.Equal(t, "New Title", updated.Title)
 	assert.Equal(t, "Updated description", updated.Description)
+	assert.True(t, updated.UpdatedAt.After(oldUpdatedAt))
 }
 
 func TestTaskRepository_Delete_Success(t *testing.T) {
@@ -94,9 +98,8 @@ func TestTaskRepository_Delete_Success(t *testing.T) {
 	err := repo.Delete(ctx, projectUUID, task.ID, owner)
 	require.NoError(t, err)
 
-	deletedTask, err := repo.FindByID(ctx, projectUUID, task.ID, owner)
-	require.NoError(t, err)
-	require.NotNil(t, deletedTask.DeletedAt)
+	_, err = repo.FindByID(ctx, projectUUID, task.ID, owner)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
 func TestTaskRepository_Move_Success(t *testing.T) {

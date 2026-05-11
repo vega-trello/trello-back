@@ -2,31 +2,38 @@ package dto
 
 import (
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/vega-trello/trello-back/internal/model"
 )
 
 type TagResponse struct {
 	ID          int       `json:"id"`
-	ProjectUUID string    `json:"project_uuid"`
+	ProjectUUID uuid.UUID `json:"project_uuid"`
 	Name        string    `json:"name"`
-	Color       int       `json:"color"`
+	Color       string    `json:"color"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// Ответ на GET /api/v1/projects/:id/tags
-type TagListResponse struct {
-	Tags  []TagResponse `json:"tags"`
-	Total int           `json:"total"`
+func FromModel(t *model.Tag) TagResponse {
+	return TagResponse{
+		ID:          t.ID,
+		ProjectUUID: t.ProjectUUID,
+		Name:        t.Name,
+		Color:       t.Color,
+		CreatedAt:   t.CreatedAt,
+		UpdatedAt:   t.UpdatedAt,
+	}
 }
 
-type TaskTagResponse struct {
-	TaskID    int          `json:"task_id"`
-	TagID     string       `json:"tag_id"`
-	CreatedAt time.Time    `json:"created_at"`
-	Tag       *TagResponse `json:"tag"`
-}
-
-type TaskListListResponse struct {
-	Tags  []TaskTagResponse `json:"tags"`
-	Total int               `json:"total"`
+func FromModels(tags []*model.Tag) []TagResponse {
+	if tags == nil {
+		return []TagResponse{}
+	}
+	res := make([]TagResponse, len(tags))
+	for i, t := range tags {
+		res[i] = FromModel(t)
+	}
+	return res
 }

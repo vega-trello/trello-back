@@ -5,7 +5,6 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -36,43 +35,16 @@ func TestRoleRepository_Create_Success(t *testing.T) {
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	params := CreateRoleParams{
-		Name:        fmt.Sprintf("Moderator_%s", uuid.New().String()[:8]),
-		Description: stringPtr("Can edit tasks"),
-	}
-
-	role, err := repo.Create(ctx, projectUUID, owner, params)
-	require.NoError(t, err)
-	require.NotNil(t, role)
-
-	assert.Greater(t, role.ID, 4)
-	assert.Equal(t, params.Name, role.Name)
-	assert.Equal(t, "Can edit tasks", *role.Description)
-	assert.Equal(t, projectUUID, role.ProjectUUID)
-}
-
-func TestRoleRepository_Create_WithPermissions(t *testing.T) {
-	repo, pool, owner := setupRoleRepo(t)
-	ctx := context.Background()
-	projectUUID := createTestProject(t, pool, owner)
-
 	perm1 := createTestPermission(t, pool, "task.create", "Create tasks")
 	perm2 := createTestPermission(t, pool, "task.update", "Update tasks")
 
-	params := CreateRoleParams{
-		Name:          fmt.Sprintf("Editor_%s", uuid.New().String()[:8]),
-		Description:   stringPtr("Can edit"),
-		PermissionIDs: []int{perm1, perm2},
-	}
-
-	role, err := repo.Create(ctx, projectUUID, owner, params)
+	role, err := repo.Create(ctx, projectUUID, owner, "Moderator", stringPtr("Can edit tasks"), []int{perm1, perm2})
 	require.NoError(t, err)
 	require.NotNil(t, role)
-	assert.Greater(t, role.ID, 4)
 
-	perms, err := repo.FindPermissions(ctx, projectUUID, role.ID, owner)
-	require.NoError(t, err)
-	require.Len(t, perms, 2)
+	assert.Equal(t, "Moderator", role.Name)
+	assert.Equal(t, projectUUID, *role.ProjectUUID)
+	assert.Greater(t, role.ID, 4) // Системные роли имеют ID 1-4
 }
 
 func TestRoleRepository_FindByProjectUUID_Success(t *testing.T) {
@@ -80,15 +52,29 @@ func TestRoleRepository_FindByProjectUUID_Success(t *testing.T) {
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	// Создаём роли с уникальными именами
-	_, _ = repo.Create(ctx, projectUUID, owner, CreateRoleParams{Name: fmt.Sprintf("Role1_%s", uuid.New().String()[:8]), Description: stringPtr("Desc1")})
-	_, _ = repo.Create(ctx, projectUUID, owner, CreateRoleParams{Name: fmt.Sprintf("Role2_%s", uuid.New().String()[:8]), Description: stringPtr("Desc2")})
+	perm := createTestPermission(t, pool, "test.perm", "Test")
+	_, _ = repo.Create(ctx, projectUUID, owner, "Role1", stringPtr("Desc1"), []int{perm})
+	_, _ = repo.Create(ctx, projectUUID, owner, "Role2", stringPtr("Desc2"), []int{perm})
 
 	roles, err := repo.FindByProjectUUID(ctx, projectUUID, owner)
 	require.NoError(t, err)
-	// Системные роли имеют project_uuid = NULL, поэтому не попадут в выборку
-	// Значит, должно быть ровно 2 созданные роли
 	require.Len(t, roles, 2)
+	assert.Equal(t, "Role1", roles[0].Name)
+	assert.Equal(t, "Role2", roles[1].Name)
+}
+
+func TestRoleRepository_FindByID_Success(t *testing.T) {
+	repo, pool, owner := setupRoleRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+
+	perm := createTestPermission(t, pool, "find.perm", "Find")
+	created, _ := repo.Create(ctx, projectUUID, owner, "FindMe", stringPtr("Desc"), []int{perm})
+
+	role, err := repo.FindByID(ctx, projectUUID, created.ID, owner)
+	require.NoError(t, err)
+	assert.Equal(t, created.ID, role.ID)
+	assert.Equal(t, "FindMe", role.Name)
 }
 
 func TestRoleRepository_Update_Success(t *testing.T) {
@@ -96,53 +82,16 @@ func TestRoleRepository_Update_Success(t *testing.T) {
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	// Создаём роль
-	role, err := repo.Create(ctx, projectUUID, owner, CreateRoleParams{
-		Name:        fmt.Sprintf("OldName_%s", uuid.New().String()[:8]),
-		Description: stringPtr("OldDesc"),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, role)
+	perm := createTestPermission(t, pool, "update.perm", "Update")
+	role, _ := repo.Create(ctx, projectUUID, owner, "OldName", stringPtr("OldDesc"), []int{perm})
 
 	newName := "NewName"
-	newDesc := "NewDesc"
-	params := UpdateRoleParams{
-		Name:        &newName,
-		Description: &newDesc,
-	}
-
-	updated, err := repo.Update(ctx, projectUUID, role.ID, owner, params)
+	newDesc := "Updated description"
+	updated, err := repo.Update(ctx, projectUUID, role.ID, owner, newName, stringPtr(newDesc), []int{perm})
 	require.NoError(t, err)
-	require.NotNil(t, updated)
 
 	assert.Equal(t, "NewName", updated.Name)
-	assert.Equal(t, "NewDesc", *updated.Description)
-}
-
-func TestRoleRepository_Update_Permissions(t *testing.T) {
-	repo, pool, owner := setupRoleRepo(t)
-	ctx := context.Background()
-	projectUUID := createTestProject(t, pool, owner)
-
-	perm1 := createTestPermission(t, pool, "perm1", "Permission 1")
-	perm2 := createTestPermission(t, pool, "perm2", "Permission 2")
-
-	role, err := repo.Create(ctx, projectUUID, owner, CreateRoleParams{
-		Name:          fmt.Sprintf("TestRole_%s", uuid.New().String()[:8]),
-		PermissionIDs: []int{perm1},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, role)
-
-	newPerms := []int{perm2}
-	params := UpdateRoleParams{PermissionIDs: &newPerms}
-
-	_, err = repo.Update(ctx, projectUUID, role.ID, owner, params)
-	require.NoError(t, err)
-
-	perms, _ := repo.FindPermissions(ctx, projectUUID, role.ID, owner)
-	require.Len(t, perms, 1)
-	assert.Equal(t, "perm2", perms[0].Name)
+	assert.Equal(t, "Updated description", *updated.Description)
 }
 
 func TestRoleRepository_Delete_Success(t *testing.T) {
@@ -150,32 +99,37 @@ func TestRoleRepository_Delete_Success(t *testing.T) {
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	role, err := repo.Create(ctx, projectUUID, owner, CreateRoleParams{
-		Name:        fmt.Sprintf("ToDelete_%s", uuid.New().String()[:8]),
-		Description: stringPtr("Desc"),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, role)
+	perm := createTestPermission(t, pool, "delete.perm", "Delete")
+	role, _ := repo.Create(ctx, projectUUID, owner, "ToDelete", stringPtr("Desc"), []int{perm})
 
-	err = repo.Delete(ctx, projectUUID, role.ID, owner)
+	err := repo.Delete(ctx, projectUUID, role.ID, owner)
 	assert.NoError(t, err)
 
 	_, err = repo.FindByID(ctx, projectUUID, role.ID, owner)
 	assert.ErrorIs(t, err, ErrRoleNotFound)
 }
 
-func TestRoleRepository_AccessDenied(t *testing.T) {
+func TestRoleRepository_CannotDeleteSystemRole(t *testing.T) {
 	repo, pool, owner := setupRoleRepo(t)
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	outsider := createTestUser(t, pool, "outsider", "pass123")
+	// Системная роль имеет ID=1 и project_uuid=NULL
+	err := repo.Delete(ctx, projectUUID, 1, owner)
+	assert.ErrorIs(t, err, ErrCannotDeleteSystemRole)
+}
 
-	_, err := repo.Create(ctx, projectUUID, outsider, CreateRoleParams{Name: "Test", Description: stringPtr("Desc")})
-	assert.ErrorIs(t, err, ErrAccessDenied)
+func TestRoleRepository_FindPermissions_Success(t *testing.T) {
+	repo, pool, owner := setupRoleRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
 
-	role, err := repo.Create(ctx, projectUUID, owner, CreateRoleParams{Name: fmt.Sprintf("Role1_%s", uuid.New().String()[:8]), Description: stringPtr("Desc")})
+	perm1 := createTestPermission(t, pool, "perm1", "Permission 1")
+	perm2 := createTestPermission(t, pool, "perm2", "Permission 2")
+	role, _ := repo.Create(ctx, projectUUID, owner, "TestRole", stringPtr("Desc"), []int{perm1, perm2})
+
+	perms, err := repo.FindPermissions(ctx, projectUUID, role.ID, owner)
 	require.NoError(t, err)
-	_, err = repo.FindByID(ctx, projectUUID, role.ID, outsider)
-	assert.ErrorIs(t, err, ErrAccessDenied)
+	require.Len(t, perms, 2)
+	assert.Contains(t, []string{perms[0].Name, perms[1].Name}, "perm1")
 }

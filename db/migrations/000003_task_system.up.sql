@@ -25,9 +25,8 @@ CREATE TABLE tasks (
     column_id INTEGER REFERENCES project_column(id) ON DELETE SET NULL,
     status_id INTEGER REFERENCES project_status(id) ON DELETE SET NULL,
     creator_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
-    title TEXT,
+    title VARCHAR(256) NOT NULL,
     description TEXT,
-    deleted_at TIMESTAMPTZ, -- обновлять в гошке
     archived_at TIMESTAMPTZ, --обновлять в гошке
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -38,7 +37,6 @@ CREATE TABLE tasks (
 CREATE INDEX idx_tasks_column ON tasks(column_id);
 CREATE INDEX idx_tasks_status ON tasks(status_id);
 CREATE INDEX idx_tasks_creator ON tasks(creator_uuid);
-CREATE INDEX idx_tasks_deleted ON tasks(deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX idx_tasks_archived ON tasks(archived_at) WHERE archived_at IS NOT NULL;
 
 

@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE base_user (
     uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(64) NOT NULL UNIQUE,
+    username VARCHAR(32) NOT NULL UNIQUE,
     user_type VARCHAR(8) NOT NULL CHECK (user_type IN ('sso', 'manual')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()  -- обновлять в go

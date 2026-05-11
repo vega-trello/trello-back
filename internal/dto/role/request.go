@@ -1,30 +1,47 @@
-// internal/dto/role/request.go
-package dto // ← Обязательно 'dto', а не 'role'!
+package dto
 
-import "github.com/vega-trello/trello-back/internal/utils"
+import "errors"
 
 type CreateRoleRequest struct {
-	Name          string  `json:"name" binding:"required,min=1,max=32"`
-	Description   *string `json:"description,omitempty" binding:"omitempty,max=256"`
-	PermissionIDs *[]int  `json:"permission_ids,omitempty"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	PermissionIDs []int  `json:"permission_ids"`
 }
 
-type UpdateRoleRequest struct {
-	Name          *string `json:"name,omitempty" binding:"omitempty,min=1,max=32"`
-	Description   *string `json:"description,omitempty" binding:"omitempty,max=256"`
-	PermissionIDs *[]int  `json:"permission_ids,omitempty"`
-}
-
-func (r *CreateRoleRequest) Validate() error {
-	if r.Name == "" {
-		return &utils.ValidationError{Field: "name", Message: "required"}
+func (r CreateRoleRequest) Validate() error {
+	// Name: required, minLength 1, maxLength 32
+	if r.Name == "" || len(r.Name) > 32 {
+		return errors.New("name must be between 1 and 32 characters")
+	}
+	// Description: optional, maxLength 256
+	if r.Description != "" && len(r.Description) > 256 {
+		return errors.New("description must not exceed 256 characters")
+	}
+	// PermissionIDs: required, non-empty
+	if len(r.PermissionIDs) == 0 {
+		return errors.New("at least one permission_id is required")
 	}
 	return nil
 }
 
-func (r *UpdateRoleRequest) Validate() error {
-	if r.Name != nil && *r.Name == "" {
-		return &utils.ValidationError{Field: "name", Message: "cannot be empty"}
+type UpdateRoleRequest struct {
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	PermissionIDs []int  `json:"permission_ids"`
+}
+
+func (r UpdateRoleRequest) Validate() error {
+	// Name: required, 1..32
+	if r.Name == "" || len(r.Name) > 32 {
+		return errors.New("name must be between 1 and 32 characters")
+	}
+	// Description: optional, maxLength 256
+	if r.Description != "" && len(r.Description) > 256 {
+		return errors.New("description must not exceed 256 characters")
+	}
+	// PermissionIDs: required, non-empty
+	if len(r.PermissionIDs) == 0 {
+		return errors.New("at least one permission_id is required")
 	}
 	return nil
 }
