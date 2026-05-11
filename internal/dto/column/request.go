@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"errors"
+
 	"github.com/vega-trello/trello-back/internal/utils"
 )
 
@@ -16,17 +18,13 @@ type UpdateColumnRequest struct {
 	Position *int   `json:"position,omitempty" binding:"omitempty,min=0"`
 }
 
-// PATCH /api/v1/columns/{columnID}/move
 type MoveColumnRequest struct {
-	Position int `json:"position" binding:"required,min=0"`
+	Direction string `json:"direction" binding:"required,oneof=left right"`
 }
 
 func (r *MoveColumnRequest) Validate() error {
-	if r.Position < 0 {
-		return &utils.ValidationError{
-			Field:   "position",
-			Message: "position must be non-negative",
-		}
+	if r.Direction != "left" && r.Direction != "right" {
+		return errors.New("direction must be 'left' or 'right'")
 	}
 	return nil
 }

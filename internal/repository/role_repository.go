@@ -85,9 +85,9 @@ func (r *RoleRepository) FindByProjectUUID(
 		return nil, err
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT id, project_uuid, name, description
-		FROM role
-		WHERE project_uuid = $1
+		SELECT id, project_uuid, name, description 
+		FROM role 
+		WHERE project_uuid = $1 
 		ORDER BY name ASC
 	`, projectUUID)
 	if err != nil {
@@ -117,10 +117,11 @@ func (r *RoleRepository) FindByID(
 ) (*model.Role, error) {
 	var role model.Role
 	err := r.db.QueryRow(ctx, `
-		SELECT id, project_uuid, name, description
-		FROM role
+		SELECT id, project_uuid, name, description 
+		FROM role 
 		WHERE id = $1 AND (project_uuid = $2 OR project_uuid IS NULL)
 	`, roleID, projectUUID).Scan(&role.ID, &role.ProjectUUID, &role.Name, &role.Description)
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrRoleNotFound
 	}
@@ -171,7 +172,9 @@ func (r *RoleRepository) Update(
 		SET name = $1, description = $2
 		WHERE id = $3
 		RETURNING id, project_uuid, name, description
-	`, name, description, roleID).Scan(&role.ID, &role.ProjectUUID, &role.Name, &role.Description)
+	`, name, description, roleID).Scan(
+		&role.ID, &role.ProjectUUID, &role.Name, &role.Description,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("repository: update role: %w", err)
 	}
@@ -219,7 +222,7 @@ func (r *RoleRepository) Delete(
 	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
 		return err
 	}
-	
+
 	var inUse bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE role_id = $1)`, roleID).Scan(&inUse)
 	if err != nil {
@@ -242,7 +245,6 @@ func (r *RoleRepository) FindPermissions(
 	roleID int,
 	userUUID uuid.UUID,
 ) ([]*model.Permission, error) {
-	// Проверка доступа к роли
 	_, err := r.FindByID(ctx, projectUUID, roleID, userUUID)
 	if err != nil {
 		return nil, err

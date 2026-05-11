@@ -17,7 +17,7 @@ type ColumnRepositoryInterface interface {
 	FindByID(ctx context.Context, columnID int, userUUID uuid.UUID) (*model.Column, error)
 	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
 	Delete(ctx context.Context, columnID int, userUUID uuid.UUID) error
-	Move(ctx context.Context, columnID int, userUUID uuid.UUID, newPosition int) (*model.Column, error)
+	Move(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
 }
 
 type ColumnRepository struct {
@@ -193,36 +193,75 @@ func (r *ColumnRepository) Delete(
 	return nil
 }
 
+// Move меняет позицию колонки на 1 влево или вправо (обмен с соседом)
 func (r *ColumnRepository) Move(
 	ctx context.Context,
 	columnID int,
 	userUUID uuid.UUID,
-	newPosition int,
+	direction string,
 ) (*model.Column, error) {
-	var projectUUID uuid.UUID
-	err := r.db.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, columnID).Scan(&projectUUID)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("repository: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var col model.Column
+	err = tx.QueryRow(ctx, `
+		SELECT id, project_uuid, name, position, created_at 
+		FROM project_column WHERE id = $1
+	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrColumnNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("repository: find column project: %w", err)
+		return nil, fmt.Errorf("repository: find column: %w", err)
 	}
-	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+
+	if _, err := r.checkUserAccessTx(ctx, tx, col.ProjectUUID, userUUID); err != nil {
 		return nil, err
 	}
 
-	var col model.Column
-	err = r.db.QueryRow(ctx, `
-		UPDATE project_column
-		SET position = $1
-		WHERE id = $2
-		RETURNING id, project_uuid, name, position, created_at
-	`, newPosition, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+	targetPos := col.Position
+	if direction == "left" {
+		targetPos--
+	} else {
+		targetPos++
+	}
+
+	if targetPos < 0 {
+		return &col, nil
+	}
+
+	var neighborID int
+	err = tx.QueryRow(ctx, `
+		SELECT id FROM project_column 
+		WHERE project_uuid = $1 AND position = $2 AND id != $3
+	`, col.ProjectUUID, targetPos, columnID).Scan(&neighborID)
+
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrColumnNotFound
+		return &col, nil
 	}
 	if err != nil {
+		return nil, fmt.Errorf("repository: find neighbor: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE project_column SET position = $1 WHERE id = $2`, targetPos, columnID)
+	if err != nil {
 		return nil, fmt.Errorf("repository: move column: %w", err)
+	}
+	_, err = tx.Exec(ctx, `UPDATE project_column SET position = $1 WHERE id = $2`, col.Position, neighborID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: swap neighbor: %w", err)
+	}
+
+	err = tx.QueryRow(ctx, `
+		SELECT id, project_uuid, name, position, created_at 
+		FROM project_column WHERE id = $1
+	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 	return &col, nil
 }

@@ -49,6 +49,8 @@ func TestColumnRepository_FindByProjectUUID_Success(t *testing.T) {
 	require.Len(t, cols, 2)
 	assert.Equal(t, "Col 1", cols[0].Name)
 	assert.Equal(t, "Col 2", cols[1].Name)
+	assert.Equal(t, 0, cols[0].Position)
+	assert.Equal(t, 1, cols[1].Position)
 }
 
 func TestColumnRepository_FindByID_Success(t *testing.T) {
@@ -63,6 +65,14 @@ func TestColumnRepository_FindByID_Success(t *testing.T) {
 	assert.Equal(t, created.ID, col.ID)
 	assert.Equal(t, "Find Me", col.Name)
 	assert.Equal(t, 5, col.Position)
+}
+
+func TestColumnRepository_FindByID_NotFound(t *testing.T) {
+	repo, _, owner := setupColumnRepo(t)
+	ctx := context.Background()
+
+	_, err := repo.FindByID(ctx, 99999, owner)
+	assert.ErrorIs(t, err, ErrColumnNotFound)
 }
 
 func TestColumnRepository_Update_Success(t *testing.T) {
@@ -95,14 +105,65 @@ func TestColumnRepository_Delete_Success(t *testing.T) {
 	assert.ErrorIs(t, err, ErrColumnNotFound)
 }
 
-func TestColumnRepository_Move_Success(t *testing.T) {
+func TestColumnRepository_Move_Left_Success(t *testing.T) {
 	repo, pool, owner := setupColumnRepo(t)
 	ctx := context.Background()
 	projectUUID := createTestProject(t, pool, owner)
 
-	col, _ := repo.Create(ctx, projectUUID, owner, "ToMove", intPtr(0))
+	col1, _ := repo.Create(ctx, projectUUID, owner, "Left", intPtr(0))
+	col2, _ := repo.Create(ctx, projectUUID, owner, "Right", intPtr(1))
 
-	updated, err := repo.Move(ctx, col.ID, owner, 5)
+	// Двигаем правую колонку влево
+	updated, err := repo.Move(ctx, col2.ID, owner, "left")
+	require.NoError(t, err)
+	assert.Equal(t, 0, updated.Position)
+
+	// Проверяем, что левая сдвинулась вправо
+	updated1, _ := repo.FindByID(ctx, col1.ID, owner)
+	assert.Equal(t, 1, updated1.Position)
+}
+
+func TestColumnRepository_Move_Right_Success(t *testing.T) {
+	repo, pool, owner := setupColumnRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+
+	col1, _ := repo.Create(ctx, projectUUID, owner, "Left", intPtr(0))
+	col2, _ := repo.Create(ctx, projectUUID, owner, "Right", intPtr(1))
+
+	// Двигаем левую колонку вправо
+	updated, err := repo.Move(ctx, col1.ID, owner, "right")
+	require.NoError(t, err)
+	assert.Equal(t, 1, updated.Position)
+
+	// Проверяем, что правая сдвинулась влево
+	updated2, _ := repo.FindByID(ctx, col2.ID, owner)
+	assert.Equal(t, 0, updated2.Position)
+}
+
+func TestColumnRepository_Move_Boundary_Left(t *testing.T) {
+	repo, pool, owner := setupColumnRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+
+	col, _ := repo.Create(ctx, projectUUID, owner, "Only", intPtr(0))
+
+	// Попытка сдвинуть влево, когда колонка уже на позиции 0
+	updated, err := repo.Move(ctx, col.ID, owner, "left")
+	require.NoError(t, err)
+	// Должна остаться на месте, так как соседа слева нет
+	assert.Equal(t, 0, updated.Position)
+}
+
+func TestColumnRepository_Move_Boundary_Right(t *testing.T) {
+	repo, pool, owner := setupColumnRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+
+	col, _ := repo.Create(ctx, projectUUID, owner, "Only", intPtr(5))
+
+	// Попытка сдвинуть вправо, когда соседа справа нет
+	updated, err := repo.Move(ctx, col.ID, owner, "right")
 	require.NoError(t, err)
 	assert.Equal(t, 5, updated.Position)
 }
