@@ -11,17 +11,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-// TagRepositoryInterface — контракт репозитория
-type TagRepositoryInterface interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
-	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Tag, error)
-	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*model.Tag, error)
-	Update(ctx context.Context, tagID int, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
-	Delete(ctx context.Context, tagID int, userUUID uuid.UUID) error
-	AddToTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
-	RemoveFromTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
-}
-
 type TagRepository struct {
 	db *pgxpool.Pool
 }

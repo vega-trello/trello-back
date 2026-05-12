@@ -13,14 +13,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-type ProjectRepositoryInterface interface {
-	Create(ctx context.Context, creatorUUID uuid.UUID, req dto.CreateProjectRequest) (*model.Project, error)
-	FindByID(ctx context.Context, id uuid.UUID) (*model.Project, error)
-	Update(ctx context.Context, id uuid.UUID, title, description *string) (*model.Project, error)
-	Delete(ctx context.Context, id uuid.UUID) error
-	UserHasAccess(ctx context.Context, userUUID, projectUUID uuid.UUID) (bool, error)
-}
-
 type ProjectRepository struct {
 	db *pgxpool.Pool
 }

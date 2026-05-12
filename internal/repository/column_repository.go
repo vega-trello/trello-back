@@ -11,15 +11,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-type ColumnRepositoryInterface interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
-	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Column, error)
-	FindByID(ctx context.Context, columnID int, userUUID uuid.UUID) (*model.Column, error)
-	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
-	Delete(ctx context.Context, columnID int, userUUID uuid.UUID) error
-	Move(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
-}
-
 type ColumnRepository struct {
 	db *pgxpool.Pool
 }

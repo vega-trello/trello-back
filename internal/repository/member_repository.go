@@ -12,16 +12,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-type MemberRepositoryInterface interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
-	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID) ([]*model.ProjectMember, error)
-	FindByProjectUUIDWithDetails(ctx context.Context, projectUUID uuid.UUID) ([]*dto.MemberResponse, error)
-	Update(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
-	Delete(ctx context.Context, projectUUID, userUUID uuid.UUID) error
-	FindByProjectAndUser(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (*model.ProjectMember, error)
-	HasRole(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (bool, error)
-}
-
 // MemberRepository реализует MemberRepositoryInterface с использованием pgxpool
 type MemberRepository struct {
 	db *pgxpool.Pool

@@ -14,23 +14,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserRepositoryInterface определяет контракт для работы с пользователями и аутентификацией
-type UserRepositoryInterface interface {
-	// Auth endpoints
-	RegisterPasswordUser(ctx context.Context, username string, passwordHash []byte) (*model.User, error)
-	FindUserByUsername(ctx context.Context, username string) (*model.User, []byte, error)
-	FindOrCreateUserBySSO(ctx context.Context, provider string, externalID string, username string) (*model.User, error)
-	FindUserByUUID(ctx context.Context, userUUID uuid.UUID) (*model.User, error)
-
-	// User endpoints (возвращают *model.SelfUser)
-	GetSelfUser(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	UpdateSelfUser(ctx context.Context, userUUID uuid.UUID, oldPassword string, newUsername string, newPassword string) (*model.SelfUser, error)
-
-	// Вспомогательные
-	VerifyPassword(ctx context.Context, userUUID uuid.UUID, password string) error
-	Logout(ctx context.Context, userUUID uuid.UUID) error
-}
-
 // UserRepository реализует UserRepositoryInterface
 type UserRepository struct {
 	db *pgxpool.Pool

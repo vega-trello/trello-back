@@ -11,13 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// AssigneeRepositoryInterface определяет контракт для управления исполнителями задач
-type AssigneeRepositoryInterface interface {
-	Add(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
-	Remove(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
-	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, callerUUID uuid.UUID) ([]*AssigneeResponse, error)
-}
-
 // AssigneeResponse структура ответа API (task_assignee + данные пользователя)
 type AssigneeResponse struct {
 	TaskID     int       `json:"task_id"`
