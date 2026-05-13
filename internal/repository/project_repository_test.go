@@ -6,7 +6,6 @@ package repository
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,86 +18,247 @@ func setupProjectRepo(t *testing.T) (*ProjectRepository, *pgxpool.Pool, uuid.UUI
 	t.Helper()
 	pool := setupTestPool(t)
 	repo := NewProjectRepository(pool)
-	owner := createTestUser(t, pool, "project_owner", "pass123")
-	return repo, pool, owner
+
+	creatorUUID := uuid.New()
+
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, 'test_creator', 'manual', NOW(), NOW())
+		ON CONFLICT (uuid) DO NOTHING
+	`, creatorUUID)
+	require.NoError(t, err)
+
+	return repo, pool, creatorUUID
+}
+
+func strPtr(s string) *string {
+	return &s
 }
 
 func TestProjectRepository_Create_Success(t *testing.T) {
-	repo, _, owner := setupProjectRepo(t)
+	repo, pool, creatorUUID := setupProjectRepo(t)
 	ctx := context.Background()
 
 	req := dto.CreateProjectRequest{
 		Title:       "Test Project",
-		Description: "Description",
+		Description: strPtr("Project description"),
 	}
 
-	project, err := repo.Create(ctx, owner, req)
+	project, err := repo.Create(ctx, creatorUUID, req)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
-	assert.NotEqual(t, uuid.Nil, project.UUID)
+	assert.NotEmpty(t, project.UUID)
 	assert.Equal(t, "Test Project", project.Title)
-	assert.Equal(t, "Description", project.Description)
-	assert.WithinDuration(t, time.Now(), project.CreatedAt, time.Second)
+	assert.Equal(t, "Project description", *project.Description)
+	assert.False(t, project.CreatedAt.IsZero())
+	assert.False(t, project.UpdatedAt.IsZero())
+
+	var roleID int
+	err = pool.QueryRow(ctx, `
+		SELECT role_id FROM project_member
+		WHERE project_uuid = $1 AND user_uuid = $2
+	`, project.UUID, creatorUUID).Scan(&roleID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, roleID)
+}
+
+func TestProjectRepository_Create_WithoutDescription(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	req := dto.CreateProjectRequest{
+		Title:       "No Desc Project",
+		Description: nil,
+	}
+
+	project, err := repo.Create(ctx, creatorUUID, req)
+	require.NoError(t, err)
+
+	assert.Equal(t, "No Desc Project", project.Title)
+	assert.Nil(t, project.Description)
 }
 
 func TestProjectRepository_FindByID_Success(t *testing.T) {
-	repo, _, owner := setupProjectRepo(t)
+	repo, _, creatorUUID := setupProjectRepo(t)
 	ctx := context.Background()
 
-	req := dto.CreateProjectRequest{Title: "Find Me", Description: "Desc"}
-	created, err := repo.Create(ctx, owner, req)
-	require.NoError(t, err)
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{
+		Title:       "Find Me",
+		Description: strPtr("Found"),
+	})
 
-	found, err := repo.FindByID(ctx, created.UUID)
+	project, err := repo.FindByID(ctx, created.UUID)
 	require.NoError(t, err)
-	assert.Equal(t, created.UUID, found.UUID)
-	assert.Equal(t, created.Title, found.Title)
+	require.NotNil(t, project)
+
+	assert.Equal(t, created.UUID, project.UUID)
+	assert.Equal(t, "Find Me", project.Title)
+	assert.Equal(t, "Found", *project.Description)
 }
 
-func TestProjectRepository_Update_Success(t *testing.T) {
-	repo, _, owner := setupProjectRepo(t)
+func TestProjectRepository_FindByID_NotFound(t *testing.T) {
+	repo, _, _ := setupProjectRepo(t)
 	ctx := context.Background()
 
-	req := dto.CreateProjectRequest{Title: "Old Title", Description: "Old Desc"}
-	created, err := repo.Create(ctx, owner, req)
-	require.NoError(t, err)
-	time.Sleep(10 * time.Millisecond)
+	randomUUID := uuid.New()
+	project, err := repo.FindByID(ctx, randomUUID)
+	assert.ErrorIs(t, err, ErrProjectNotFound)
+	assert.Nil(t, project)
+}
 
-	newTitle := "New Title"
-	newDesc := "New Desc"
-	updated, err := repo.Update(ctx, created.UUID, &newTitle, &newDesc)
+func TestProjectRepository_FindByUser_Success(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	_, _ = repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "Project 1"})
+	_, _ = repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "Project 2"})
+
+	projects, err := repo.FindByUser(ctx, creatorUUID)
+	require.NoError(t, err)
+	require.Len(t, projects, 2)
+
+	titles := []string{projects[0].Title, projects[1].Title}
+	assert.Contains(t, titles, "Project 1")
+	assert.Contains(t, titles, "Project 2")
+}
+
+func TestProjectRepository_Update_TitleOnly(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{
+		Title:       "Old Title",
+		Description: strPtr("Old description"),
+	})
+
+	updated, err := repo.Update(ctx, created.UUID, creatorUUID, strPtr("New Title"), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, "New Title", updated.Title)
-	assert.Equal(t, "New Desc", updated.Description)
-	assert.True(t, updated.UpdatedAt.After(updated.CreatedAt))
+	assert.Equal(t, "Old description", *updated.Description) // осталось без изменений
+}
+
+func TestProjectRepository_Update_DescriptionOnly(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{
+		Title:       "Keep Title",
+		Description: strPtr("Old desc"),
+	})
+
+	updated, err := repo.Update(ctx, created.UUID, creatorUUID, nil, strPtr("New desc"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "Keep Title", updated.Title)      // осталось
+	assert.Equal(t, "New desc", *updated.Description) // обновилось
+}
+
+func TestProjectRepository_Update_ClearDescription(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{
+		Title:       "Test",
+		Description: strPtr("To be cleared"),
+	})
+
+	empty := ""
+	updated, err := repo.Update(ctx, created.UUID, creatorUUID, nil, &empty)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Test", updated.Title)
+	assert.Equal(t, "", *updated.Description) // теперь пустая строка, не nil
+}
+
+func TestProjectRepository_Update_BothFields(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{
+		Title:       "Old",
+		Description: strPtr("Old"),
+	})
+
+	updated, err := repo.Update(ctx, created.UUID, creatorUUID, strPtr("New Title"), strPtr("New Desc"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "New Title", updated.Title)
+	assert.Equal(t, "New Desc", *updated.Description)
+}
+
+func TestProjectRepository_Update_AccessDenied(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "Private"})
+
+	otherUser := uuid.New()
+	_, err := repo.Update(ctx, created.UUID, otherUser, strPtr("New"), nil)
+	assert.ErrorIs(t, err, ErrAccessDenied)
+}
+
+func TestProjectRepository_Update_NotFound(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	randomUUID := uuid.New()
+	_, err := repo.Update(ctx, randomUUID, creatorUUID, strPtr("New"), nil)
+
+	assert.ErrorIs(t, err, ErrAccessDenied)
 }
 
 func TestProjectRepository_Delete_Success(t *testing.T) {
-	repo, _, owner := setupProjectRepo(t)
+	repo, _, creatorUUID := setupProjectRepo(t)
 	ctx := context.Background()
 
-	req := dto.CreateProjectRequest{Title: "To Delete", Description: "Desc"}
-	created, err := repo.Create(ctx, owner, req)
-	require.NoError(t, err)
+	created, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "ToDelete"})
 
-	err = repo.Delete(ctx, created.UUID)
+	err := repo.Delete(ctx, created.UUID)
 	assert.NoError(t, err)
 
 	_, err = repo.FindByID(ctx, created.UUID)
 	assert.ErrorIs(t, err, ErrProjectNotFound)
 }
 
-func TestProjectRepository_UserHasAccess_Success(t *testing.T) {
-	repo, _, owner := setupProjectRepo(t)
+func TestProjectRepository_Delete_NotFound(t *testing.T) {
+	repo, _, _ := setupProjectRepo(t)
 	ctx := context.Background()
 
-	req := dto.CreateProjectRequest{Title: "Access Test", Description: "Desc"}
-	project, err := repo.Create(ctx, owner, req)
-	require.NoError(t, err)
+	randomUUID := uuid.New()
+	err := repo.Delete(ctx, randomUUID)
+	assert.ErrorIs(t, err, ErrProjectNotFound)
+}
 
-	hasAccess, err := repo.UserHasAccess(ctx, owner, project.UUID)
+func TestProjectRepository_IsMember_Success(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "MemberTest"})
+
+	isMember, err := repo.IsMember(ctx, project.UUID, creatorUUID)
 	require.NoError(t, err)
-	assert.True(t, hasAccess)
+	assert.True(t, isMember)
+
+	otherUser := uuid.New()
+	isMember, err = repo.IsMember(ctx, project.UUID, otherUser)
+	require.NoError(t, err)
+	assert.False(t, isMember)
+}
+
+func TestProjectRepository_IsOwner_Success(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "OwnerTest"})
+
+	isOwner, err := repo.IsOwner(ctx, project.UUID, creatorUUID)
+	require.NoError(t, err)
+	assert.True(t, isOwner)
+
+	otherUser := uuid.New()
+	isOwner, err = repo.IsOwner(ctx, project.UUID, otherUser)
+	require.NoError(t, err)
+	assert.False(t, isOwner)
 }

@@ -2,23 +2,35 @@ package dto
 
 import (
 	"time"
+
+	"github.com/vega-trello/trello-back/internal/model"
 )
 
-// post /projects 200
 type ProjectResponse struct {
-	UUID        string    `json:"uuid"`
-	Title       string    `json:"title" binding:"required,min=1,max=128"`
-	Description string    `json:"description,omitempty" binding:"omitempty,max=512"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	UUID        string  `json:"uuid"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
 }
 
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+func FromModel(p *model.Project) *ProjectResponse {
+	if p == nil {
+		return nil
+	}
+	return &ProjectResponse{
+		UUID:        p.UUID.String(),
+		Title:       p.Title,
+		Description: p.Description,
+		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   p.UpdatedAt.Format(time.RFC3339),
+	}
 }
 
-type ProjectListResponse struct {
-	Projects []ProjectResponse `json:"projects"`
-	Total    int               `json:"total"`
+func FromModels(projects []*model.Project) []*ProjectResponse {
+	responses := make([]*ProjectResponse, 0, len(projects))
+	for _, p := range projects {
+		responses = append(responses, FromModel(p))
+	}
+	return responses
 }
