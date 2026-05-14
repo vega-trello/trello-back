@@ -39,3 +39,20 @@ type ProjectRepository interface {
 	IsMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (bool, error)
 	IsOwner(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (bool, error)
 }
+
+type StatusRepository interface {
+	Create(ctx context.Context, projectUUID uuid.UUID, name string, callerUUID uuid.UUID) (*model.ProjectStatus, error)
+	FindByProject(ctx context.Context, projectUUID uuid.UUID, callerUUID uuid.UUID) ([]*model.ProjectStatus, error)
+	FindByID(ctx context.Context, projectUUID uuid.UUID, statusID int, callerUUID uuid.UUID) (*model.ProjectStatus, error)
+	Update(ctx context.Context, projectUUID uuid.UUID, statusID int, newName string, callerUUID uuid.UUID) (*model.ProjectStatus, error)
+	Delete(ctx context.Context, projectUUID uuid.UUID, statusID int, callerUUID uuid.UUID) error
+}
+
+type ColumnRepository interface {
+	Create(ctx context.Context, projectUUID uuid.UUID, name string, position *int, callerUUID uuid.UUID) (*model.Column, error)
+	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, callerUUID uuid.UUID) ([]*model.Column, error)
+	FindByID(ctx context.Context, columnID int, callerUUID uuid.UUID) (*model.Column, error)
+	Update(ctx context.Context, columnID int, name *string, position *int, callerUUID uuid.UUID) (*model.Column, error)
+	Delete(ctx context.Context, columnID int, callerUUID uuid.UUID) error
+	Move(ctx context.Context, columnID int, direction string, callerUUID uuid.UUID) (*model.Column, error)
+}
