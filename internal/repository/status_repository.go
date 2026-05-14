@@ -12,7 +12,9 @@ import (
 )
 
 var (
-	ErrStatusNotFound = errors.New("project status not found")
+	ErrStatusNotFound       = errors.New("project status not found")
+	ErrStatusAlreadyExists  = errors.New("status with this name already exists in project")
+	ErrStatusHasActiveTasks = errors.New("cannot delete status with active tasks")
 )
 
 type StatusRepository struct {
@@ -23,6 +25,7 @@ func NewStatusRepository(db *pgxpool.Pool) *StatusRepository {
 	return &StatusRepository{db: db}
 }
 
+// Create создаёт новый статус в проекте
 func (r *StatusRepository) Create(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -39,6 +42,20 @@ func (r *StatusRepository) Create(
 		return nil, err
 	}
 
+	var exists bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_status 
+			WHERE project_uuid = $1 AND name = $2
+		)
+	`, projectUUID, name).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("repository: check duplicate status: %w", err)
+	}
+	if exists {
+		return nil, ErrStatusAlreadyExists
+	}
+
 	var status model.ProjectStatus
 	err = tx.QueryRow(ctx, `
 		INSERT INTO project_status (project_uuid, name, created_at)
@@ -48,12 +65,14 @@ func (r *StatusRepository) Create(
 	if err != nil {
 		return nil, fmt.Errorf("repository: create status: %w", err)
 	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 	return &status, nil
 }
 
+// FindByProject возвращает все статусы проекта
 func (r *StatusRepository) FindByProject(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -66,7 +85,7 @@ func (r *StatusRepository) FindByProject(
 		SELECT id, project_uuid, name, created_at
 		FROM project_status
 		WHERE project_uuid = $1
-		ORDER BY created_at ASC
+		ORDER BY name ASC
 	`, projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("repository: find statuses by project: %w", err)
@@ -87,6 +106,7 @@ func (r *StatusRepository) FindByProject(
 	return statuses, nil
 }
 
+// FindByID находит статус по ID в контексте проекта
 func (r *StatusRepository) FindByID(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -111,6 +131,7 @@ func (r *StatusRepository) FindByID(
 	return &status, nil
 }
 
+// Update обновляет имя статуса
 func (r *StatusRepository) Update(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -128,6 +149,21 @@ func (r *StatusRepository) Update(
 		return nil, err
 	}
 
+	// 🔥 Проверка уникальности (исключаем текущий статус по ID)
+	var exists bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_status 
+			WHERE project_uuid = $1 AND name = $2 AND id != $3
+		)
+	`, projectUUID, newName, statusID).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("repository: check duplicate status: %w", err)
+	}
+	if exists {
+		return nil, ErrStatusAlreadyExists
+	}
+
 	var status model.ProjectStatus
 	err = tx.QueryRow(ctx, `
 		UPDATE project_status
@@ -141,12 +177,14 @@ func (r *StatusRepository) Update(
 	if err != nil {
 		return nil, fmt.Errorf("repository: update status: %w", err)
 	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 	return &status, nil
 }
 
+// Delete удаляет статус, но только если на него не ссылаются активные задачи
 func (r *StatusRepository) Delete(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -156,6 +194,21 @@ func (r *StatusRepository) Delete(
 	if err := r.ensureUserAccess(ctx, projectUUID, callerUUID); err != nil {
 		return err
 	}
+
+	var hasActiveTasks bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM tasks
+			WHERE status_id = $1 AND archived_at IS NULL
+		)
+	`, statusID).Scan(&hasActiveTasks)
+	if err != nil {
+		return fmt.Errorf("repository: check active tasks: %w", err)
+	}
+	if hasActiveTasks {
+		return ErrStatusHasActiveTasks
+	}
+
 	result, err := r.db.Exec(ctx, `
 		DELETE FROM project_status 
 		WHERE id = $1 AND project_uuid = $2
@@ -169,9 +222,15 @@ func (r *StatusRepository) Delete(
 	return nil
 }
 
+// ensureUserAccess проверяет, является ли пользователь участником проекта
 func (r *StatusRepository) ensureUserAccess(ctx context.Context, projectUUID, userUUID uuid.UUID) error {
 	var exists bool
-	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_member 
+			WHERE project_uuid = $1 AND user_uuid = $2
+		)
+	`, projectUUID, userUUID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("repository: check access: %w", err)
 	}
@@ -181,9 +240,15 @@ func (r *StatusRepository) ensureUserAccess(ctx context.Context, projectUUID, us
 	return nil
 }
 
+// ensureUserAccessTx то же самое, но внутри транзакции
 func (r *StatusRepository) ensureUserAccessTx(ctx context.Context, tx pgx.Tx, projectUUID, userUUID uuid.UUID) error {
 	var exists bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_member 
+			WHERE project_uuid = $1 AND user_uuid = $2
+		)
+	`, projectUUID, userUUID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("repository: check access (tx): %w", err)
 	}

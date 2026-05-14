@@ -1,17 +1,33 @@
 package dto
 
 import (
-	"time"
+	"github.com/google/uuid"
+	"github.com/vega-trello/trello-back/internal/model"
 )
 
 type StatusResponse struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	ProjectUUID uuid.UUID `json:"project_uuid"`
+	Name        string    `json:"name"`
+	CreatedAt   string    `json:"created_at"`
 }
 
-// Ответ на GET /api/v1/projects/:id/statuses
-type StatusListResponse struct {
-	Statuses []StatusResponse `json:"statuses"`
-	Total    int              `json:"total"`
+func FromModel(s *model.ProjectStatus) StatusResponse {
+	return StatusResponse{
+		ID:          s.ID,
+		ProjectUUID: s.ProjectUUID,
+		Name:        s.Name,
+		CreatedAt:   s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), // RFC3339
+	}
+}
+
+func FromModels(statuses []*model.ProjectStatus) []StatusResponse {
+	if statuses == nil {
+		return []StatusResponse{}
+	}
+	res := make([]StatusResponse, len(statuses))
+	for i, s := range statuses {
+		res[i] = FromModel(s)
+	}
+	return res
 }
