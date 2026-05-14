@@ -12,6 +12,10 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
+var (
+	ErrInvalidStatus = errors.New("status does not belong to project")
+)
+
 type TaskRepository struct {
 	db *pgxpool.Pool
 }
@@ -24,6 +28,7 @@ func (r *TaskRepository) Create(
 	ctx context.Context,
 	projectUUID uuid.UUID,
 	columnID int,
+	statusID *int,
 	creatorUUID uuid.UUID,
 	title string,
 	description string,
@@ -47,16 +52,33 @@ func (r *TaskRepository) Create(
 	if colProjectUUID != projectUUID {
 		return nil, ErrInvalidColumn
 	}
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, creatorUUID); err != nil {
+
+	if statusID != nil {
+		var statusProjectUUID uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_status WHERE id = $1`, *statusID).Scan(&statusProjectUUID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrInvalidStatus
+		}
+		if err != nil {
+			return nil, fmt.Errorf("repository: check status: %w", err)
+		}
+		if statusProjectUUID != projectUUID {
+			return nil, ErrInvalidStatus
+		}
+	}
+
+	if exists, err := r.checkUserAccessTx(ctx, tx, projectUUID, creatorUUID); err != nil {
 		return nil, err
+	} else if !exists {
+		return nil, ErrAccessDenied
 	}
 
 	var task model.TaskDB
 	err = tx.QueryRow(ctx, `
-		INSERT INTO tasks (column_id, creator_uuid, title, description, start_date, end_date, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+		INSERT INTO tasks (column_id, status_id, creator_uuid, title, description, start_date, end_date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
 		RETURNING id, column_id, status_id, creator_uuid, title, description, archived_at, created_at, updated_at, start_date, end_date
-	`, columnID, creatorUUID, title, description, startDate, endDate, time.Now()).Scan(
+	`, columnID, statusID, creatorUUID, title, description, startDate, endDate, time.Now()).Scan(
 		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
 		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
 	)
@@ -102,9 +124,12 @@ func (r *TaskRepository) FindByProjectUUID(
 	userUUID uuid.UUID,
 	archived *bool,
 ) ([]*model.TaskDB, error) {
-	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+	if exists, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
 		return nil, err
+	} else if !exists {
+		return nil, ErrAccessDenied
 	}
+
 	query := `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
 		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
@@ -184,9 +209,10 @@ func (r *TaskRepository) Update(
 	userUUID uuid.UUID,
 	title *string,
 	description *string,
-	startDate **time.Time,
-	endDate **time.Time,
+	startDate *time.Time,
+	endDate *time.Time,
 	columnID *int,
+	statusID *int,
 	archived *bool,
 ) (*model.TaskDB, error) {
 	tx, err := r.db.Begin(ctx)
@@ -195,8 +221,10 @@ func (r *TaskRepository) Update(
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+	if exists, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
 		return nil, err
+	} else if !exists {
+		return nil, ErrAccessDenied
 	}
 
 	query := "UPDATE tasks SET updated_at = NOW()"
@@ -213,19 +241,15 @@ func (r *TaskRepository) Update(
 		query += fmt.Sprintf(", description = $%d", argIdx)
 		argIdx++
 	}
-	if startDate != nil && *startDate != nil {
-		args = append(args, **startDate)
+	if startDate != nil {
+		args = append(args, *startDate)
 		query += fmt.Sprintf(", start_date = $%d", argIdx)
 		argIdx++
-	} else if startDate != nil {
-		query += ", start_date = NULL"
 	}
-	if endDate != nil && *endDate != nil {
-		args = append(args, **endDate)
+	if endDate != nil {
+		args = append(args, *endDate)
 		query += fmt.Sprintf(", end_date = $%d", argIdx)
 		argIdx++
-	} else if endDate != nil {
-		query += ", end_date = NULL"
 	}
 	if columnID != nil {
 		var targetProjectUUID uuid.UUID
@@ -241,6 +265,22 @@ func (r *TaskRepository) Update(
 		}
 		args = append(args, *columnID)
 		query += fmt.Sprintf(", column_id = $%d", argIdx)
+		argIdx++
+	}
+	if statusID != nil {
+		var statusProjectUUID uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_status WHERE id = $1`, *statusID).Scan(&statusProjectUUID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrInvalidStatus
+		}
+		if err != nil {
+			return nil, fmt.Errorf("repository: check target status: %w", err)
+		}
+		if statusProjectUUID != projectUUID {
+			return nil, ErrInvalidStatus
+		}
+		args = append(args, *statusID)
+		query += fmt.Sprintf(", status_id = $%d", argIdx)
 		argIdx++
 	}
 	if archived != nil {
@@ -282,9 +322,12 @@ func (r *TaskRepository) Delete(
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+	if exists, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
 		return err
+	} else if !exists {
+		return ErrAccessDenied
 	}
+
 	_, err = tx.Exec(ctx, `
 		DELETE FROM tasks
 		WHERE id = $1 AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $2)
@@ -308,9 +351,12 @@ func (r *TaskRepository) Move(
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+	if exists, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
 		return err
+	} else if !exists {
+		return ErrAccessDenied
 	}
+
 	var targetProjectUUID uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, targetColumnID).Scan(&targetProjectUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -339,9 +385,13 @@ func (r *TaskRepository) Archive(
 	userUUID uuid.UUID,
 	archive bool,
 ) error {
-	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+	// 🔥 ПРАВИЛЬНАЯ проверка доступа
+	if exists, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
 		return err
+	} else if !exists {
+		return ErrAccessDenied
 	}
+
 	query := `
 		UPDATE tasks
 		SET archived_at = CASE WHEN $1 THEN NOW() ELSE NULL END, updated_at = NOW()

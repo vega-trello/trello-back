@@ -27,7 +27,6 @@ func stringPtr(s string) *string     { return &s }
 func boolPtr(b bool) *bool           { return &b }
 func timePtr(t time.Time) *time.Time { return &t }
 
-// ensureSystemRoles создаёт системные роли и синхронизирует последовательность ID
 func ensureSystemRoles(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
@@ -46,8 +45,8 @@ func ensureSystemRoles(t *testing.T, pool *pgxpool.Pool) {
 	for _, r := range roles {
 		// Пробуем с created_at, если ошибка - пробуем без него
 		_, err := pool.Exec(ctx, `
-			INSERT INTO role (id, project_uuid, name, description, created_at)
-			VALUES ($1, NULL, $2, $3, NOW())
+			INSERT INTO role (id, project_uuid, name, description)
+			VALUES ($1, NULL, $2, $3,
 			ON CONFLICT (id) DO NOTHING
 		`, r.id, r.name, r.description)
 
