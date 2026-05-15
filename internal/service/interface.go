@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	dto "github.com/vega-trello/trello-back/internal/dto/project"
@@ -55,4 +56,15 @@ type ColumnRepository interface {
 	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
 	Delete(ctx context.Context, columnID int, userUUID uuid.UUID) error
 	Move(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
+}
+
+type TaskRepository interface {
+	Create(ctx context.Context, projectUUID uuid.UUID, columnID int, statusID *int, creatorUUID uuid.UUID, title string, description string, startDate *time.Time, endDate *time.Time) (*model.TaskDB, error)
+	FindByID(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) (*model.TaskDB, error)
+	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, archived *bool) ([]*model.TaskDB, error)
+	FindByColumn(ctx context.Context, columnID int, userUUID uuid.UUID) ([]*model.TaskDB, error)
+	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate *time.Time, endDate *time.Time, columnID *int, statusID *int, archived *bool) (*model.TaskDB, error)
+	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
+	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }

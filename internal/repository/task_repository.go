@@ -385,7 +385,6 @@ func (r *TaskRepository) Archive(
 	userUUID uuid.UUID,
 	archive bool,
 ) error {
-	// 🔥 ПРАВИЛЬНАЯ проверка доступа
 	if exists, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
 		return err
 	} else if !exists {
