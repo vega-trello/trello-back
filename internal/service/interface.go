@@ -49,10 +49,10 @@ type StatusRepository interface {
 }
 
 type ColumnRepository interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, name string, position *int, callerUUID uuid.UUID) (*model.Column, error)
-	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, callerUUID uuid.UUID) ([]*model.Column, error)
-	FindByID(ctx context.Context, columnID int, callerUUID uuid.UUID) (*model.Column, error)
-	Update(ctx context.Context, columnID int, name *string, position *int, callerUUID uuid.UUID) (*model.Column, error)
-	Delete(ctx context.Context, columnID int, callerUUID uuid.UUID) error
-	Move(ctx context.Context, columnID int, direction string, callerUUID uuid.UUID) (*model.Column, error)
+	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
+	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Column, error)
+	FindByID(ctx context.Context, columnID int, userUUID uuid.UUID) (*model.Column, error)
+	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int) (*model.Column, error)
+	Delete(ctx context.Context, columnID int, userUUID uuid.UUID) error
+	Move(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
 }
