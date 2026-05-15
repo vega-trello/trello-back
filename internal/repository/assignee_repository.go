@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// AssigneeResponse структура ответа API (task_assignee + данные пользователя)
 type AssigneeResponse struct {
 	TaskID     int       `json:"task_id"`
 	UserUUID   uuid.UUID `json:"user_uuid"`

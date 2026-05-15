@@ -8,6 +8,7 @@ import (
 	dto "github.com/vega-trello/trello-back/internal/dto/member"
 	dtoProject "github.com/vega-trello/trello-back/internal/dto/project"
 	"github.com/vega-trello/trello-back/internal/model"
+	repoPkg "github.com/vega-trello/trello-back/internal/repository"
 )
 
 type UserRepository interface {
@@ -76,4 +77,23 @@ type MemberRepository interface {
 	FindByProjectAndUser(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (*model.ProjectMember, error)
 	Update(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
 	Delete(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) error
+}
+
+type TagRepository interface {
+	// CRUD для тегов
+	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
+	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Tag, error)
+	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*model.Tag, error)
+	Update(ctx context.Context, tagID int, userUUID uuid.UUID, name string, color string) (*model.Tag, error)
+	Delete(ctx context.Context, tagID int, userUUID uuid.UUID) error
+
+	// Привязка тегов к задачам
+	AddToTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
+	RemoveFromTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
+}
+
+type AssigneeRepository interface {
+	Add(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
+	Remove(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
+	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, callerUUID uuid.UUID) ([]*repoPkg.AssigneeResponse, error)
 }
