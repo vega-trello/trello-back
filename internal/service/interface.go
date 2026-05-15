@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	dto "github.com/vega-trello/trello-back/internal/dto/project"
+	dto "github.com/vega-trello/trello-back/internal/dto/member"
+	dtoProject "github.com/vega-trello/trello-back/internal/dto/project"
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
@@ -32,7 +33,7 @@ type RoleRepository interface {
 }
 
 type ProjectRepository interface {
-	Create(ctx context.Context, userUUID uuid.UUID, req dto.CreateProjectRequest) (*model.Project, error)
+	Create(ctx context.Context, userUUID uuid.UUID, req dtoProject.CreateProjectRequest) (*model.Project, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Project, error)
 	FindByUser(ctx context.Context, userUUID uuid.UUID) ([]*model.Project, error)
 	Update(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, title *string, description *string) (*model.Project, error)
@@ -67,4 +68,12 @@ type TaskRepository interface {
 	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
 	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
 	Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
+}
+
+type MemberRepository interface {
+	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
+	FindByProjectUUIDWithDetails(ctx context.Context, projectUUID uuid.UUID) ([]*dto.MemberResponse, error)
+	FindByProjectAndUser(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (*model.ProjectMember, error)
+	Update(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, roleID int) (*model.ProjectMember, error)
+	Delete(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) error
 }
