@@ -149,7 +149,6 @@ func (r *StatusRepository) Update(
 		return nil, err
 	}
 
-	// 🔥 Проверка уникальности (исключаем текущий статус по ID)
 	var exists bool
 	err = tx.QueryRow(ctx, `
 		SELECT EXISTS(
