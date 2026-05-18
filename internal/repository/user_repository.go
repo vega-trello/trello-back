@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,7 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserRepository реализует UserRepositoryInterface
+// UserRepository реализует UserRepositoryInterface с использованием pgxpool
 type UserRepository struct {
 	db *pgxpool.Pool
 }
@@ -37,7 +38,6 @@ func (r *UserRepository) RegisterPasswordUser(
 
 	userUUID := uuid.New()
 
-	// Создаём запись в base_user
 	_, err = tx.Exec(ctx, `
 		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
 		VALUES ($1, $2, 'manual', NOW(), NOW())
@@ -49,7 +49,6 @@ func (r *UserRepository) RegisterPasswordUser(
 		return nil, fmt.Errorf("repository: create base_user: %w", err)
 	}
 
-	// Создаём запись в manual_user с хешем пароля
 	_, err = tx.Exec(ctx, `
 		INSERT INTO manual_user (user_uuid, password_hash)
 		VALUES ($1, $2)
@@ -65,10 +64,11 @@ func (r *UserRepository) RegisterPasswordUser(
 	return &model.User{
 		UUID:     userUUID,
 		Username: username,
+		UserType: "manual",
 	}, nil
 }
 
-// FindUserByUsername находит manual-пользователя и возвращает хеш пароля для проверки
+// FindUserByUsername находит manual-пользователя и возвращает хеш пароля для проверки-
 func (r *UserRepository) FindUserByUsername(
 	ctx context.Context,
 	username string,
@@ -90,6 +90,7 @@ func (r *UserRepository) FindUserByUsername(
 		return nil, nil, fmt.Errorf("repository: find user by username: %w", err)
 	}
 
+	user.UserType = "manual"
 	return &user, passwordHash, nil
 }
 
@@ -99,10 +100,10 @@ func (r *UserRepository) FindOrCreateUserBySSO(
 	provider string,
 	externalID string,
 	username string,
+	metadata json.RawMessage,
 ) (*model.User, error) {
 	var user model.User
 
-	// Пытаемся найти существующего
 	err := r.db.QueryRow(ctx, `
 		SELECT u.uuid, u.username
 		FROM base_user u
@@ -111,13 +112,13 @@ func (r *UserRepository) FindOrCreateUserBySSO(
 	`, provider, externalID).Scan(&user.UUID, &user.Username)
 
 	if err == nil {
+		user.UserType = "sso"
 		return &user, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("repository: check sso user: %w", err)
 	}
 
-	// Не найден - создаём нового
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("repository: begin transaction: %w", err)
@@ -137,10 +138,15 @@ func (r *UserRepository) FindOrCreateUserBySSO(
 		return nil, fmt.Errorf("repository: create sso base_user: %w", err)
 	}
 
+	metaToSave := metadata
+	if metaToSave == nil {
+		metaToSave = json.RawMessage("{}")
+	}
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO sso_user (user_uuid, provider, external_id, metadata)
-		VALUES ($1, $2, $3, '{}')
-	`, newUUID, provider, externalID)
+		VALUES ($1, $2, $3, $4)
+	`, newUUID, provider, externalID, metaToSave)
 	if err != nil {
 		return nil, fmt.Errorf("repository: create sso_user record: %w", err)
 	}
@@ -152,11 +158,11 @@ func (r *UserRepository) FindOrCreateUserBySSO(
 	return &model.User{
 		UUID:     newUUID,
 		Username: username,
+		UserType: "sso",
 	}, nil
 }
 
 // FindUserByUUID находит пользователя по UUID (для валидации JWT)
-// Возвращает базовую модель *model.User
 func (r *UserRepository) FindUserByUUID(
 	ctx context.Context,
 	userUUID uuid.UUID,
@@ -164,9 +170,9 @@ func (r *UserRepository) FindUserByUUID(
 	var user model.User
 
 	err := r.db.QueryRow(ctx, `
-		SELECT uuid, username
+		SELECT uuid, username, user_type
 		FROM base_user WHERE uuid = $1
-	`, userUUID).Scan(&user.UUID, &user.Username)
+	`, userUUID).Scan(&user.UUID, &user.Username, &user.UserType)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -179,7 +185,6 @@ func (r *UserRepository) FindUserByUUID(
 }
 
 // GetSelfUser возвращает расширенную информацию о пользователе для эндпоинта GET /user
-// Возвращает *model.SelfUser с полями: uuid, username, created_at, updated_at, user_type
 func (r *UserRepository) GetSelfUser(
 	ctx context.Context,
 	userUUID uuid.UUID,
@@ -205,8 +210,6 @@ func (r *UserRepository) GetSelfUser(
 }
 
 // UpdateSelfUser обновляет профиль текущего пользователя для эндпоинта PATCH /user
-// Требуется старый пароль, новое имя и/или новый пароль
-// Возвращает обновлённый *model.SelfUser
 func (r *UserRepository) UpdateSelfUser(
 	ctx context.Context,
 	userUUID uuid.UUID,
@@ -220,7 +223,6 @@ func (r *UserRepository) UpdateSelfUser(
 	}
 	defer tx.Rollback(ctx)
 
-	//  Получаем тип пользователя
 	var userType, currentUsername string
 	var currentHash []byte
 	err = tx.QueryRow(ctx, `
@@ -237,21 +239,16 @@ func (r *UserRepository) UpdateSelfUser(
 		return nil, fmt.Errorf("repository: find user: %w", err)
 	}
 
-	// Проверяем старый пароль (только для manual-пользователей)
 	if userType == "manual" {
 		if err := bcrypt.CompareHashAndPassword(currentHash, []byte(oldPassword)); err != nil {
 			return nil, ErrInvalidCredentials
 		}
 	} else {
-		// SSO-пользователи не могут менять пароль через этот эндпоинт
-		// Но могут менять username, если old_password совпадает (бизнес-правило: можно проверить через внешний провайдер)
-		// Для простоты: запрещаем обновление пароля для SSO
 		if newPassword != "" {
 			return nil, ErrSSOUserPasswordChange
 		}
 	}
 
-	// Обновляем username, если он изменился
 	if newUsername != "" && newUsername != currentUsername {
 		_, err = tx.Exec(ctx, `
 			UPDATE base_user SET username = $1, updated_at = NOW()
@@ -265,7 +262,6 @@ func (r *UserRepository) UpdateSelfUser(
 		}
 	}
 
-	// Обновляем пароль, если он передан (только для manual)
 	if newPassword != "" && userType == "manual" {
 		newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 		if err != nil {
@@ -284,12 +280,11 @@ func (r *UserRepository) UpdateSelfUser(
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 
-	//  Возвращаем обновлённый профиль
+	// 5. Возвращаем обновлённый профиль
 	return r.GetSelfUser(ctx, userUUID)
 }
 
 // VerifyPassword проверяет пароль для manual-пользователя
-// Используется внутри сервиса для дополнительной валидации
 func (r *UserRepository) VerifyPassword(
 	ctx context.Context,
 	userUUID uuid.UUID,
@@ -319,7 +314,7 @@ func (r *UserRepository) VerifyPassword(
 	return bcrypt.CompareHashAndPassword(passwordHash, []byte(password))
 }
 
-// Logout - заглушка для stateless JWT (инвалидация на клиенте)
+// Logout — заглушка для stateless JWT (инвалидация на клиенте)
 func (r *UserRepository) Logout(ctx context.Context, userUUID uuid.UUID) error {
 	// Stateless JWT: нет сессии на сервере для инвалидации
 	// В будущем можно добавить blacklist токенов в Redis
@@ -331,6 +326,15 @@ func isUniqueViolation(err error, constraintName string) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505" && pgErr.ConstraintName == constraintName
+	}
+	return false
+}
+
+// isForeignKeyViolation проверяет, является ли ошибкой нарушение внешнего ключа
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23503"
 	}
 	return false
 }

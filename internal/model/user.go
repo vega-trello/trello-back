@@ -10,6 +10,7 @@ import (
 type User struct {
 	UUID     uuid.UUID `db:"uuid" json:"uuid"`
 	Username string    `db:"username" json:"username"`
+	UserType string    `db:"user_type" json:"user_type"`
 }
 
 // Используется для GET /user и PATCH /user
@@ -17,7 +18,6 @@ type SelfUser struct {
 	User
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-	UserType  string    `db:"user_type" json:"user_type"` // "manual" или "sso"
 }
 
 // ManualUser соответствует таблице manual_user (внутренняя)
