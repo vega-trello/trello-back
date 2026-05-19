@@ -1,4 +1,3 @@
-// internal/handler/user_handler.go
 package handler
 
 import (
@@ -12,8 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	dto "github.com/vega-trello/trello-back/internal/dto/user"
 	"github.com/vega-trello/trello-back/internal/middleware"
-	"github.com/vega-trello/trello-back/internal/repository"
-	"github.com/vega-trello/trello-back/internal/service"
 	"github.com/vega-trello/trello-back/internal/utils"
 )
 
@@ -170,11 +167,11 @@ func (h *UserHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	// Stateless JWT: инвалидация на клиенте
 	_ = h.userService.Logout(c.Request.Context(), userUUID)
 	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 }
 
+// parseVegaToken отправляет запрос
 func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaProfile, error) {
 	reqURL := fmt.Sprintf("%s?op=parsetoken&token=%s", h.vegaBaseURL, token)
 
@@ -203,31 +200,6 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 	}
 
 	return &profile, nil
-}
-
-func handleServiceError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, service.ErrInvalidCredentials):
-		respondError(c, http.StatusUnauthorized, "invalid_credentials", err.Error())
-	case errors.Is(err, service.ErrPasswordTooShort):
-		respondError(c, http.StatusBadRequest, "password_too_short", err.Error())
-	case errors.Is(err, service.ErrUserAlreadyExists):
-		respondError(c, http.StatusConflict, "username_taken", err.Error())
-	case errors.Is(err, service.ErrSSOUserPasswordChange):
-		respondError(c, http.StatusForbidden, "sso_password_change_forbidden", err.Error())
-	case errors.Is(err, repository.ErrUserNotFound):
-		respondError(c, http.StatusNotFound, "user_not_found", "User not found")
-
-	default:
-		respondError(c, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
-	}
-}
-
-func respondError(c *gin.Context, status int, code string, msg string) {
-	c.AbortWithStatusJSON(status, dto.ErrorResponse{
-		Error:   code,
-		Message: msg,
-	})
 }
 
 // VegaProfile структура ответа
