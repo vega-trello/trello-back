@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,16 +13,16 @@ import (
 )
 
 type UserRepository interface {
-	// Auth endpoints
+	//auth endpoints
 	RegisterPasswordUser(ctx context.Context, username string, passwordHash []byte) (*model.User, error)
 	FindUserByUsername(ctx context.Context, username string) (*model.User, []byte, error)
-	FindOrCreateUserBySSO(ctx context.Context, provider, externalID, username string) (*model.User, error)
+	FindOrCreateUserBySSO(ctx context.Context, provider string, externalID string, username string, metadata json.RawMessage) (*model.User, error)
 	FindUserByUUID(ctx context.Context, userUUID uuid.UUID) (*model.User, error)
 	Logout(ctx context.Context, userUUID uuid.UUID) error
 
-	// User endpoints
+	// user endpoints
 	GetSelfUser(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	UpdateSelfUser(ctx context.Context, userUUID uuid.UUID, oldPassword, newUsername, newPassword string) (*model.SelfUser, error)
+	UpdateSelfUser(ctx context.Context, userUUID uuid.UUID, oldPassword string, newUsername string, newPassword string) (*model.SelfUser, error)
 }
 
 type RoleRepository interface {
