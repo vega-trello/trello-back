@@ -8,29 +8,27 @@ import (
 )
 
 // LoginResponse - POST /auth/login 200
-// Возвращает только токен
 type LoginResponse struct {
 	Token string `json:"token"`
 }
 
-// RegisterResponse — POST /auth/register 201
+// RegisterResponse - POST /auth/register 201
 type RegisterResponse struct {
 	Token string `json:"token"`
 }
 
-// SSOExchangeResponse — POST /auth/sso/exchange 200
+// SSOExchangeResponse - POST /auth/sso/exchange 200
 type SSOExchangeResponse struct {
 	Token string `json:"token"`
 }
 
-// UserResponse — базовая информация о пользователе
 type UserResponse struct {
 	UUID     uuid.UUID `json:"uuid"`
 	Username string    `json:"username"`
-	UserType string    `json:"user_type"`
+	UserType string    `json:"user_type"` // "manual" или "sso"
 }
 
-// SelfUserResponse — расширенная информация о текущем пользователе (GET /user)
+// SelfUserResponse - расширенная информация о текущем пользователе (GET /user)
 type SelfUserResponse struct {
 	UUID      uuid.UUID `json:"uuid"`
 	Username  string    `json:"username"`
@@ -55,10 +53,11 @@ func FromUserModel(u *model.User) UserResponse {
 	return UserResponse{
 		UUID:     u.UUID,
 		Username: u.Username,
+		UserType: u.UserType,
 	}
 }
 
-// UserInfo - для вложенных ответов
+// UserInfo - вспомогательная структура для вложенных ответов
 type UserInfo struct {
 	UUID     uuid.UUID `json:"uuid"`
 	Username string    `json:"username"`

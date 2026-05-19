@@ -68,17 +68,30 @@ func (r *LogoutRequest) Validate() error {
 // UpdateUserRequest - PATCH /user
 type UpdateUserRequest struct {
 	OldPassword string `json:"old_password" binding:"required"`
-	Username    string `json:"username" binding:"required"`
-	Password    string `json:"password" binding:"required"`
+	Username    string `json:"username" binding:"omitempty,min=1,max=32"`
+	Password    string `json:"password" binding:"omitempty,min=8"`
 }
 
 func (r *UpdateUserRequest) Validate() error {
 	if r.OldPassword == "" {
 		return &utils.ValidationError{Field: "old_password", Message: "old_password is required"}
 	}
-	if r.Username == "" {
-		return &utils.ValidationError{Field: "username", Message: "username is required"}
+
+	if r.Username != "" {
+		if len(r.Username) < 1 || len(r.Username) > 32 {
+			return &utils.ValidationError{
+				Field:   "username",
+				Message: "username must be between 1 and 32 characters",
+			}
+		}
+		if !utils.IsValidUsername(r.Username) {
+			return &utils.ValidationError{
+				Field:   "username",
+				Message: "username can contain only lowercase letters, numbers, underscore and dash",
+			}
+		}
 	}
+
 	if r.Password != "" && len(r.Password) < 8 {
 		return &utils.ValidationError{
 			Field:   "password",

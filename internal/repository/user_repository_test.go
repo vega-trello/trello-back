@@ -53,9 +53,11 @@ func TestUserRepository_RegisterPasswordUser_DuplicateUsername(t *testing.T) {
 	username := "duplicate"
 	passwordHash := hashPassword(t, "pass1")
 
+	// Первая регистрация — успешно
 	_, err := repo.RegisterPasswordUser(ctx, username, passwordHash)
 	require.NoError(t, err)
 
+	// Вторая регистрация с тем же username — ошибка
 	_, err = repo.RegisterPasswordUser(ctx, username, hashPassword(t, "pass2"))
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
 }
@@ -446,6 +448,7 @@ func TestUserRepository_Logout_Success(t *testing.T) {
 
 	user, _ := repo.RegisterPasswordUser(ctx, "logout_user", hashPassword(t, "pass"))
 
+	// Stateless JWT: logout - заглушка, всегда успешен
 	err := repo.Logout(ctx, user.UUID)
 	assert.NoError(t, err)
 }

@@ -470,7 +470,7 @@ func TestUserService_UpdateProfile_SSO_CannotChangePassword(t *testing.T) {
 
 	_, err := svc.UpdateProfile(ctx, testUUID, "", "", newPassword)
 
-	assert.ErrorIs(t, err, repository.ErrSSOUserPasswordChange)
+	assert.ErrorIs(t, err, ErrSSOUserPasswordChange)
 
 	mockRepo.AssertExpectations(t)
 }

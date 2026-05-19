@@ -1,4 +1,3 @@
-// internal/repository/user_repository.go
 package repository
 
 import (
@@ -15,7 +14,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserRepository реализует UserRepositoryInterface с использованием pgxpool
 type UserRepository struct {
 	db *pgxpool.Pool
 }

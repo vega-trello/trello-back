@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrPasswordTooShort   = errors.New("password must be at least 8 characters")
-	ErrUserAlreadyExists  = errors.New("username already taken") // 🔥 Добавлена локально
-	ErrSSOProviderError   = errors.New("SSO provider returned an error")
-	ErrInvalidSSOToken    = errors.New("invalid or expired SSO token")
+	ErrInvalidCredentials    = errors.New("invalid username or password")
+	ErrPasswordTooShort      = errors.New("password must be at least 8 characters")
+	ErrUserAlreadyExists     = errors.New("username already taken")
+	ErrSSOProviderError      = errors.New("SSO provider returned an error")
+	ErrInvalidSSOToken       = errors.New("invalid or expired SSO token")
+	ErrSSOUserPasswordChange = errors.New("SSO users cannot change password via this endpoint")
 )
 
 type UserService struct {
@@ -71,7 +72,6 @@ func (s *UserService) LoginBySSO(
 	username string,
 	metadata json.RawMessage,
 ) (*model.User, error) {
-	// 🔹 Валидация входных параметров
 	if provider == "" || externalID == "" || username == "" {
 		return nil, fmt.Errorf("service: provider, externalID and username are required")
 	}
@@ -92,7 +92,7 @@ func (s *UserService) GetProfile(ctx context.Context, userUUID uuid.UUID) (*mode
 	user, err := s.repo.GetSelfUser(ctx, userUUID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return nil, repository.ErrUserNotFound
+			return nil, fmt.Errorf("service: get profile: %w", repository.ErrUserNotFound)
 		}
 		return nil, fmt.Errorf("service: get profile: %w", err)
 	}
@@ -117,13 +117,13 @@ func (s *UserService) UpdateProfile(
 			return nil, ErrInvalidCredentials
 		}
 		if errors.Is(err, repository.ErrSSOUserPasswordChange) {
-			return nil, repository.ErrSSOUserPasswordChange
+			return nil, ErrSSOUserPasswordChange
 		}
 		if errors.Is(err, repository.ErrUserAlreadyExists) {
 			return nil, ErrUserAlreadyExists
 		}
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return nil, repository.ErrUserNotFound
+			return nil, fmt.Errorf("service: update profile: %w", repository.ErrUserNotFound)
 		}
 		return nil, fmt.Errorf("service: update profile: %w", err)
 	}
@@ -132,5 +132,9 @@ func (s *UserService) UpdateProfile(
 
 // Logout - заглушка для stateless JWT
 func (s *UserService) Logout(ctx context.Context, userUUID uuid.UUID) error {
+	// Stateless JWT: нет сессии на сервере для инвалидации
+	// В будущем здесь можно добавить:
+	// - логирование выхода для аудита
+	// - добавление токена в блэклист (Redis) для принудительной инвалидации
 	return s.repo.Logout(ctx, userUUID)
 }
