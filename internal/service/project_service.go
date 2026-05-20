@@ -1,4 +1,3 @@
-// internal/service/project_service.go
 package service
 
 import (
@@ -16,6 +15,7 @@ var (
 	ErrProjectNotFound           = errors.New("project not found")
 	ErrAccessDenied              = errors.New("user does not have access to this project")
 	ErrProjectHasMembers         = errors.New("cannot delete project with members: remove them first")
+	ErrProjectTitleTaken         = errors.New("project with this title already exists")
 )
 
 type ProjectService struct {

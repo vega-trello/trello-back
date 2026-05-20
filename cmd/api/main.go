@@ -78,18 +78,15 @@ func main() {
 	log.Println("Connected to PostgreSQL")
 
 	userRepo := repository.NewUserRepository(pool)
-
 	userService := service.NewUserService(userRepo)
-
 	jwtManager := auth.NewJWTManager(jwtSecret, 24*time.Hour)
+	userHandler := handler.NewUserHandler(userService, jwtManager, vegaSSOURL)
 
-	userHandler := handler.NewUserHandler(
-		userService,
-		jwtManager,
-		vegaSSOURL,
-	)
+	projectRepo := repository.NewProjectRepository(pool)
+	projectService := service.NewProjectService(projectRepo)
+	projectHandler := handler.NewProjectHandler(projectService)
 
-	r := router.SetupRouter(userHandler, jwtManager)
+	r := router.SetupRouter(userHandler, projectHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
