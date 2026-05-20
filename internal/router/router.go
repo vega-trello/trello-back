@@ -18,6 +18,7 @@ func SetupRouter(
 	taskHandler *handler.TaskHandler,
 	memberHandler *handler.MemberHandler,
 	assigneeHandler *handler.AssigneeHandler,
+	tagHandler *handler.TagHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
@@ -91,10 +92,22 @@ func SetupRouter(
 		protected.PATCH("/projects/:projectUUID/member", memberHandler.UpdateMemberRole)
 		protected.DELETE("/projects/:projectUUID/member", memberHandler.RemoveMember)
 
+		//assignee endpoints
 		rg := protected.Group("/projects/:projectUUID")
 		rg.GET("/assignees", assigneeHandler.ListTaskAssignees)
 		rg.POST("/assignees", assigneeHandler.AddAssignee)
 		rg.DELETE("/assignee", assigneeHandler.RemoveAssignee)
+
+		//project tags endpoints
+		rg.GET("/tag", tagHandler.ListProjectTags)
+		rg.POST("/tag", tagHandler.CreateTag)
+		rg.PATCH("/tag", tagHandler.UpdateTag)
+		rg.DELETE("/tag", tagHandler.DeleteTag)
+
+		// Task tags endpoints
+		rg.GET("/task/tags", tagHandler.ListTaskTags)
+		rg.POST("/task/tags", tagHandler.AddTagToTask)
+		rg.DELETE("/task/tags/:tagID", tagHandler.RemoveTagFromTask)
 	}
 
 	return r

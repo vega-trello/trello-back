@@ -97,7 +97,11 @@ func main() {
 	assigneeService := service.NewAssigneeService(assigneeRepo)
 	assigneeHandler := handler.NewAssigneeHandler(assigneeService)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, jwtManager)
+	tagRepo := repository.NewTagRepository(pool)
+	tagService := service.NewTagService(tagRepo)
+	tagHandler := handler.NewTagHandler(tagService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
