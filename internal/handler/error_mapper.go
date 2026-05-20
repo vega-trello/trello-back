@@ -1,5 +1,3 @@
-// internal/handler/error_mapper.go
-
 package handler
 
 import (
@@ -52,6 +50,22 @@ func handleServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_position", err.Error())
 	case errors.Is(err, service.ErrInvalidDirection):
 		respondError(c, http.StatusBadRequest, "invalid_direction", err.Error())
+
+	//Task errors
+	case errors.Is(err, service.ErrTaskNotFound):
+		respondError(c, http.StatusNotFound, "task_not_found", err.Error())
+	case errors.Is(err, service.ErrInvalidTitle):
+		respondError(c, http.StatusBadRequest, "invalid_task_title", err.Error())
+	case errors.Is(err, service.ErrInvalidDescriptionTask):
+		respondError(c, http.StatusBadRequest, "invalid_task_description", err.Error())
+	case errors.Is(err, service.ErrInvalidDateRange):
+		respondError(c, http.StatusBadRequest, "invalid_date_range", err.Error())
+	case errors.Is(err, service.ErrInvalidDateFormat):
+		respondError(c, http.StatusBadRequest, "invalid_date_format", err.Error())
+	case errors.Is(err, service.ErrInvalidColumn):
+		respondError(c, http.StatusBadRequest, "invalid_column", err.Error())
+	case errors.Is(err, service.ErrInvalidStatus):
+		respondError(c, http.StatusBadRequest, "invalid_status", err.Error())
 
 	//internal server error
 	default:

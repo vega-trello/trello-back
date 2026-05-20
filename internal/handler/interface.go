@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	dto_col "github.com/vega-trello/trello-back/internal/dto/column"
+	dto_task "github.com/vega-trello/trello-back/internal/dto/task"
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
@@ -33,6 +34,16 @@ type ColumnServiceInterface interface {
 	UpdateColumn(ctx context.Context, columnID int, userUUID uuid.UUID, req dto_col.UpdateColumnRequest) (*model.Column, error)
 	DeleteColumn(ctx context.Context, columnID int, userUUID uuid.UUID) error
 	MoveColumn(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
+}
+
+type TaskServiceInterface interface {
+	CreateTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto_task.CreateTaskRequest) (*model.TaskDB, error)
+	GetProjectTasks(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, archived *bool) ([]*model.TaskDB, error)
+	GetTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) (*model.TaskDB, error)
+	UpdateTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, req dto_task.UpdateTaskRequest) (*model.TaskDB, error)
+	DeleteTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
+	MoveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	ArchiveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 
 type JWTManagerInterface interface {
