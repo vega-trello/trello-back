@@ -80,6 +80,16 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidUUID):
 		respondError(c, http.StatusBadRequest, "invalid_uuid_format", err.Error())
 
+	// assginee errors
+	case errors.Is(err, service.ErrAssigneeNotFound):
+		respondError(c, http.StatusNotFound, "assignee_not_found", err.Error())
+	case errors.Is(err, service.ErrAlreadyAssigned):
+		respondError(c, http.StatusConflict, "already_assigned", err.Error())
+	case errors.Is(err, service.ErrInvalidUserUUID):
+		respondError(c, http.StatusBadRequest, "invalid_user_uuid", err.Error())
+	case errors.Is(err, service.ErrUserNotFound):
+		respondError(c, http.StatusNotFound, "user_not_found", err.Error())
+
 	// internal server error
 	default:
 		respondError(c, http.StatusInternalServerError, "internal_error", err.Error()) // потом сделать чтобы возвращал общую ошибку

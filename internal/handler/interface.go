@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/uuid"
+	dto_assignee "github.com/vega-trello/trello-back/internal/dto/assignee"
 	dto_col "github.com/vega-trello/trello-back/internal/dto/column"
 	dto_member "github.com/vega-trello/trello-back/internal/dto/member"
 	dto_task "github.com/vega-trello/trello-back/internal/dto/task"
@@ -53,6 +54,12 @@ type MemberServiceInterface interface {
 	AddMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto_member.CreateMemberRequest) (*model.ProjectMember, error)
 	UpdateMemberRole(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID, req dto_member.UpdateMemberRequest) (*model.ProjectMember, error)
 	RemoveMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID) error
+}
+
+type AssigneeServiceInterface interface {
+	GetTaskAssignees(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*dto_assignee.AssigneeResponse, error)
+	AssignUserToTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, req dto_assignee.CreateAssigneeRequest) error
+	RemoveAssignee(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, assigneeUUID uuid.UUID) error
 }
 
 type JWTManagerInterface interface {

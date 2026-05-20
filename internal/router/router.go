@@ -16,6 +16,7 @@ func SetupRouter(
 	projectHandler *handler.ProjectHandler,
 	columnHandler *handler.ColumnHandler,
 	taskHandler *handler.TaskHandler,
+	memberHandler *handler.MemberHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
@@ -45,7 +46,6 @@ func SetupRouter(
 		c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now()})
 	})
 
-	// public endpoints
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/register", userHandler.Register)
@@ -54,22 +54,21 @@ func SetupRouter(
 		authGroup.POST("/logout", middleware.Auth(jwtManager), userHandler.Logout)
 	}
 
-	// protected endpoints
 	protected := r.Group("")
 	protected.Use(middleware.Auth(jwtManager))
 	{
-		// User endpoints
+		//User endpoints
 		protected.GET("/user", userHandler.GetProfile)
 		protected.PATCH("/user", userHandler.UpdateProfile)
 
-		// Project endpoints
+		//Project endpoints
 		protected.GET("/projects", projectHandler.ListProjects)
 		protected.POST("/projects", projectHandler.CreateProject)
 		protected.GET("/projects/:projectUUID", projectHandler.GetProject)
 		protected.PATCH("/projects/:projectUUID", projectHandler.UpdateProject)
 		protected.DELETE("/projects/:projectUUID", projectHandler.DeleteProject)
 
-		// Column endpoints
+		//Column endpoints
 		protected.GET("/projects/:projectUUID/columns", columnHandler.ListProjectColumns)
 		protected.POST("/projects/:projectUUID/columns", columnHandler.CreateColumn)
 		protected.GET("/columns/:columnID", columnHandler.GetColumn)
@@ -77,12 +76,19 @@ func SetupRouter(
 		protected.DELETE("/columns/:columnID", columnHandler.DeleteColumn)
 		protected.POST("/columns/:columnID/move", columnHandler.MoveColumn)
 
-		// task endpoints
+		//Task endpoints
 		protected.GET("/projects/:projectUUID/tasks", taskHandler.ListProjectTasks)
 		protected.POST("/projects/:projectUUID/tasks", taskHandler.CreateTask)
 		protected.GET("/projects/:projectUUID/task", taskHandler.GetTask)
-		protected.PATCH("/projects/:projectUUID/task", taskHandler.UpdateTask) // архивируем задачу через этот эндпоинт
+		protected.PATCH("/projects/:projectUUID/task", taskHandler.UpdateTask)
 		protected.DELETE("/projects/:projectUUID/task", taskHandler.DeleteTask)
+
+		//Member endpoints
+		protected.GET("/projects/:projectUUID/members", memberHandler.ListProjectMembers)
+		protected.POST("/projects/:projectUUID/members", memberHandler.AddMember)
+		protected.GET("/projects/:projectUUID/member", memberHandler.GetMember)
+		protected.PATCH("/projects/:projectUUID/member", memberHandler.UpdateMemberRole)
+		protected.DELETE("/projects/:projectUUID/member", memberHandler.RemoveMember)
 	}
 
 	return r
