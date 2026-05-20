@@ -104,6 +104,20 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrTaskNotInProject):
 		respondError(c, http.StatusBadRequest, "task_not_in_project", err.Error())
 
+	//role errors
+	case errors.Is(err, service.ErrRoleNotFound):
+		respondError(c, http.StatusNotFound, "role_not_found", err.Error())
+	case errors.Is(err, service.ErrSystemRoleProtected):
+		respondError(c, http.StatusForbidden, "system_role_protected", err.Error())
+	case errors.Is(err, service.ErrRoleInUse):
+		respondError(c, http.StatusConflict, "role_in_use", err.Error())
+	case errors.Is(err, service.ErrInvalidRoleName):
+		respondError(c, http.StatusBadRequest, "invalid_role_name", err.Error())
+	case errors.Is(err, service.ErrInvalidDescription):
+		respondError(c, http.StatusBadRequest, "invalid_role_description", err.Error())
+	case errors.Is(err, service.ErrNoPermissions):
+		respondError(c, http.StatusBadRequest, "no_permissions", err.Error())
+
 	// internal server error
 	default:
 		respondError(c, http.StatusInternalServerError, "internal_error", err.Error()) // потом сделать чтобы возвращал общую ошибку

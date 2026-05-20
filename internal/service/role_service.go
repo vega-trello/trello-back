@@ -1,4 +1,3 @@
-// internal/service/role_service.go
 package service
 
 import (

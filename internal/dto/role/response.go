@@ -1,4 +1,3 @@
-// internal/dto/role/response.go
 package dto
 
 import (

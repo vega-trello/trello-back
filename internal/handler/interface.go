@@ -73,6 +73,15 @@ type TagServiceInterface interface {
 	RemoveTagFromTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
 }
 
+type RoleServiceInterface interface {
+	CreateRole(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, description *string, permissionIDs []int) (*model.Role, error)
+	GetProjectRoles(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Role, error)
+	GetRole(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) (*model.Role, error)
+	UpdateRole(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID, name string, description *string, permissionIDs []int) (*model.Role, error)
+	DeleteRole(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) error
+	GetRolePermissions(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) ([]*model.Permission, error)
+}
+
 type JWTManagerInterface interface {
 	Generate(userUUID uuid.UUID) (string, error)
 	Parse(token string) (uuid.UUID, error)
