@@ -14,6 +14,7 @@ import (
 func SetupRouter(
 	userHandler *handler.UserHandler,
 	projectHandler *handler.ProjectHandler,
+	columnHandler *handler.ColumnHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
 	// gin.DebugMode - подробные логи для разработки
@@ -25,6 +26,7 @@ func SetupRouter(
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
+	// CORS конфигурация для фронтенда
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
 			"http://localhost:3000",
@@ -41,10 +43,12 @@ func SetupRouter(
 		MaxAge:           12 * time.Hour,
 	}))
 
+	// Healthcheck для мониторинга
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now()})
 	})
 
+	// public router
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/register", userHandler.Register)
@@ -53,23 +57,32 @@ func SetupRouter(
 		authGroup.POST("/logout", middleware.Auth(jwtManager), userHandler.Logout)
 	}
 
+	//protected router
 	protected := r.Group("")
 	protected.Use(middleware.Auth(jwtManager))
 	{
-		// User endpoints
+		//User endpoints
 		protected.GET("/user", userHandler.GetProfile)
 		protected.PATCH("/user", userHandler.UpdateProfile)
 
-		//Project endpoints
+		// Project endpoints
 		protected.GET("/projects", projectHandler.ListProjects)
 		protected.POST("/projects", projectHandler.CreateProject)
 		protected.GET("/projects/:projectUUID", projectHandler.GetProject)
 		protected.PATCH("/projects/:projectUUID", projectHandler.UpdateProject)
 		protected.DELETE("/projects/:projectUUID", projectHandler.DeleteProject)
 
-		// protected.POST("/projects/:id/columns", columnHandler.Create)
-		// protected.PATCH("/columns/:id", columnHandler.Update)
-		// protected.DELETE("/columns/:id", columnHandler.Delete)
+		// Column endpoints
+		// список и создание колонок
+		protected.GET("/projects/:projectUUID/columns", columnHandler.ListProjectColumns)
+		protected.POST("/projects/:projectUUID/columns", columnHandler.CreateColumn)
+
+		// CRUD и перемещение
+		protected.GET("/columns/:columnID", columnHandler.GetColumn)
+		protected.PATCH("/columns/:columnID", columnHandler.UpdateColumn)
+		protected.DELETE("/columns/:columnID", columnHandler.DeleteColumn)
+		protected.POST("/columns/:columnID/move", columnHandler.MoveColumn)
+
 		// protected.POST("/columns/:id/tasks", taskHandler.Create)
 		// protected.PATCH("/tasks/:id", taskHandler.Update)
 		// protected.POST("/tasks/:id/move", taskHandler.Move)

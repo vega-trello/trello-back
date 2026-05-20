@@ -36,7 +36,6 @@ func main() {
 		vegaSSOURL = "https://vegastage.ru/authservice.php"
 	}
 
-	// Порт сервера
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -44,7 +43,6 @@ func main() {
 
 	tlsCertFile := os.Getenv("TLS_CERT_FILE")
 	tlsKeyFile := os.Getenv("TLS_KEY_FILE")
-
 	autocertDomain := os.Getenv("TLS_AUTOCERT_DOMAIN")
 
 	useTLS := tlsCertFile != "" && tlsKeyFile != ""
@@ -54,13 +52,10 @@ func main() {
 		log.Fatal("Cannot use both TLS_CERT_FILE and TLS_AUTOCERT_DOMAIN. Choose one.")
 	}
 
-	var protocol string
+	protocol := "HTTP"
 	if useTLS || useAutocert {
 		protocol = "HTTPS"
-	} else {
-		protocol = "HTTP"
 	}
-
 	log.Printf("Starting server on %s :%s", protocol, port)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -86,7 +81,11 @@ func main() {
 	projectService := service.NewProjectService(projectRepo)
 	projectHandler := handler.NewProjectHandler(projectService)
 
-	r := router.SetupRouter(userHandler, projectHandler, jwtManager)
+	columnRepo := repository.NewColumnRepository(pool)
+	columnService := service.NewColumnService(columnRepo)
+	columnHandler := handler.NewColumnHandler(columnService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -99,18 +98,18 @@ func main() {
 		m := &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
 			HostPolicy: autocert.HostWhitelist(autocertDomain),
-			Cache:      autocert.DirCache("./certs"), // Сертификаты сохраняются локально
+			Cache:      autocert.DirCache("./certs"),
 		}
 
 		srv.TLSConfig = &tls.Config{
 			GetCertificate: m.GetCertificate,
-			MinVersion:     tls.VersionTLS12, // Минимальная безопасная версия
+			MinVersion:     tls.VersionTLS12,
 		}
 
 		go func() {
 			log.Printf("Starting HTTP redirect server on :80")
 			if err := http.ListenAndServe(":80", m.HTTPHandler(nil)); err != nil {
-				log.Printf("⚠HTTP redirect server error: %v", err)
+				log.Printf("HTTP redirect server error: %v", err)
 			}
 		}()
 
@@ -123,11 +122,9 @@ func main() {
 		switch {
 		case useAutocert:
 			serveErr = srv.ListenAndServeTLS("", "")
-
 		case useTLS:
 			log.Printf("Using TLS certificates: %s, %s", tlsCertFile, tlsKeyFile)
 			serveErr = srv.ListenAndServeTLS(tlsCertFile, tlsKeyFile)
-
 		default:
 			serveErr = srv.ListenAndServe()
 		}
@@ -145,7 +142,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("⚠Shutting down server gracefully...")
+	log.Println("Shutting down server gracefully...")
 
 	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()

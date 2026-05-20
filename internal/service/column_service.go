@@ -1,4 +1,3 @@
-// internal/service/column_service.go
 package service
 
 import (
