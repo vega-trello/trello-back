@@ -8,6 +8,7 @@ import (
 	dto_assignee "github.com/vega-trello/trello-back/internal/dto/assignee"
 	dto_col "github.com/vega-trello/trello-back/internal/dto/column"
 	dto_member "github.com/vega-trello/trello-back/internal/dto/member"
+	dto_tag "github.com/vega-trello/trello-back/internal/dto/tag"
 	dto_task "github.com/vega-trello/trello-back/internal/dto/task"
 	"github.com/vega-trello/trello-back/internal/model"
 )
@@ -60,6 +61,16 @@ type AssigneeServiceInterface interface {
 	GetTaskAssignees(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*dto_assignee.AssigneeResponse, error)
 	AssignUserToTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, req dto_assignee.CreateAssigneeRequest) error
 	RemoveAssignee(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, assigneeUUID uuid.UUID) error
+}
+
+type TagServiceInterface interface {
+	GetProjectTags(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Tag, error)
+	GetTaskTags(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) ([]*model.Tag, error)
+	CreateTag(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto_tag.CreateTagRequest) (*model.Tag, error)
+	UpdateTag(ctx context.Context, tagID int, userUUID uuid.UUID, req dto_tag.UpdateTagRequest) (*model.Tag, error)
+	DeleteTag(ctx context.Context, tagID int, userUUID uuid.UUID) error
+	AddTagToTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
+	RemoveTagFromTask(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, taskID int, tagID int) error
 }
 
 type JWTManagerInterface interface {

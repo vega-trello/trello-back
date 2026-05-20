@@ -93,7 +93,11 @@ func main() {
 	memberService := service.NewMemberService(memberRepo)
 	memberHandler := handler.NewMemberHandler(memberService)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, jwtManager)
+	assigneeRepo := repository.NewAssigneeRepository(pool)
+	assigneeService := service.NewAssigneeService(assigneeRepo)
+	assigneeHandler := handler.NewAssigneeHandler(assigneeService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

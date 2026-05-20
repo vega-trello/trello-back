@@ -17,6 +17,7 @@ func SetupRouter(
 	columnHandler *handler.ColumnHandler,
 	taskHandler *handler.TaskHandler,
 	memberHandler *handler.MemberHandler,
+	assigneeHandler *handler.AssigneeHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
@@ -89,6 +90,11 @@ func SetupRouter(
 		protected.GET("/projects/:projectUUID/member", memberHandler.GetMember)
 		protected.PATCH("/projects/:projectUUID/member", memberHandler.UpdateMemberRole)
 		protected.DELETE("/projects/:projectUUID/member", memberHandler.RemoveMember)
+
+		rg := protected.Group("/projects/:projectUUID")
+		rg.GET("/assignees", assigneeHandler.ListTaskAssignees)
+		rg.POST("/assignees", assigneeHandler.AddAssignee)
+		rg.DELETE("/assignee", assigneeHandler.RemoveAssignee)
 	}
 
 	return r

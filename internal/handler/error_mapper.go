@@ -90,6 +90,20 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrUserNotFound):
 		respondError(c, http.StatusNotFound, "user_not_found", err.Error())
 
+	// tag errors
+	case errors.Is(err, service.ErrTagNotFound):
+		respondError(c, http.StatusNotFound, "tag_not_found", err.Error())
+	case errors.Is(err, service.ErrTagAlreadyExists):
+		respondError(c, http.StatusConflict, "tag_already_exists", err.Error())
+	case errors.Is(err, service.ErrInvalidTagName):
+		respondError(c, http.StatusBadRequest, "invalid_tag_name", err.Error())
+	case errors.Is(err, service.ErrInvalidColorFormat):
+		respondError(c, http.StatusBadRequest, "invalid_color_format", err.Error())
+	case errors.Is(err, service.ErrTagNotInProject):
+		respondError(c, http.StatusBadRequest, "tag_not_in_project", err.Error())
+	case errors.Is(err, service.ErrTaskNotInProject):
+		respondError(c, http.StatusBadRequest, "task_not_in_project", err.Error())
+
 	// internal server error
 	default:
 		respondError(c, http.StatusInternalServerError, "internal_error", err.Error()) // потом сделать чтобы возвращал общую ошибку
