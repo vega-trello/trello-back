@@ -1,3 +1,4 @@
+// cmd/api/main.go
 package main
 
 import (
@@ -85,7 +86,11 @@ func main() {
 	columnService := service.NewColumnService(columnRepo)
 	columnHandler := handler.NewColumnHandler(columnService)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, jwtManager)
+	taskRepo := repository.NewTaskRepository(pool)
+	taskService := service.NewTaskService(taskRepo)
+	taskHandler := handler.NewTaskHandler(taskService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

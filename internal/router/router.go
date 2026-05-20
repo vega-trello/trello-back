@@ -1,3 +1,4 @@
+// internal/router/router.go
 package router
 
 import (
@@ -15,18 +16,15 @@ func SetupRouter(
 	userHandler *handler.UserHandler,
 	projectHandler *handler.ProjectHandler,
 	columnHandler *handler.ColumnHandler,
+	taskHandler *handler.TaskHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
-	// gin.DebugMode - подробные логи для разработки
-	// gin.ReleaseMode - оптимизация для продакшена
 	gin.SetMode(gin.DebugMode)
 
 	r := gin.New()
-
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// CORS конфигурация для фронтенда
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
 			"http://localhost:3000",
@@ -43,12 +41,12 @@ func SetupRouter(
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Healthcheck для мониторинга
+	// Healthcheck
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now()})
 	})
 
-	// public router
+	// public endpoints
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/register", userHandler.Register)
@@ -57,11 +55,11 @@ func SetupRouter(
 		authGroup.POST("/logout", middleware.Auth(jwtManager), userHandler.Logout)
 	}
 
-	//protected router
+	// protected endpoints
 	protected := r.Group("")
 	protected.Use(middleware.Auth(jwtManager))
 	{
-		//User endpoints
+		// User endpoints
 		protected.GET("/user", userHandler.GetProfile)
 		protected.PATCH("/user", userHandler.UpdateProfile)
 
@@ -73,20 +71,19 @@ func SetupRouter(
 		protected.DELETE("/projects/:projectUUID", projectHandler.DeleteProject)
 
 		// Column endpoints
-		// список и создание колонок
 		protected.GET("/projects/:projectUUID/columns", columnHandler.ListProjectColumns)
 		protected.POST("/projects/:projectUUID/columns", columnHandler.CreateColumn)
-
-		// CRUD и перемещение
 		protected.GET("/columns/:columnID", columnHandler.GetColumn)
 		protected.PATCH("/columns/:columnID", columnHandler.UpdateColumn)
 		protected.DELETE("/columns/:columnID", columnHandler.DeleteColumn)
 		protected.POST("/columns/:columnID/move", columnHandler.MoveColumn)
 
-		// protected.POST("/columns/:id/tasks", taskHandler.Create)
-		// protected.PATCH("/tasks/:id", taskHandler.Update)
-		// protected.POST("/tasks/:id/move", taskHandler.Move)
-		// protected.POST("/tasks/:id/archive", taskHandler.Archive)
+		// task endpoints
+		protected.GET("/projects/:projectUUID/tasks", taskHandler.ListProjectTasks)
+		protected.POST("/projects/:projectUUID/tasks", taskHandler.CreateTask)
+		protected.GET("/projects/:projectUUID/task", taskHandler.GetTask)
+		protected.PATCH("/projects/:projectUUID/task", taskHandler.UpdateTask) // архивируем задачу через этот эндпоинт
+		protected.DELETE("/projects/:projectUUID/task", taskHandler.DeleteTask)
 	}
 
 	return r
