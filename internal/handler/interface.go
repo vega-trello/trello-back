@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	dto_col "github.com/vega-trello/trello-back/internal/dto/column"
+	dto_member "github.com/vega-trello/trello-back/internal/dto/member"
 	dto_task "github.com/vega-trello/trello-back/internal/dto/task"
 	"github.com/vega-trello/trello-back/internal/model"
 )
@@ -44,6 +45,14 @@ type TaskServiceInterface interface {
 	DeleteTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
 	MoveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
 	ArchiveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
+}
+
+type MemberServiceInterface interface {
+	GetProjectMembers(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*dto_member.MemberResponse, error)
+	GetMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID) (*dto_member.MemberResponse, error)
+	AddMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto_member.CreateMemberRequest) (*model.ProjectMember, error)
+	UpdateMemberRole(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID, req dto_member.UpdateMemberRequest) (*model.ProjectMember, error)
+	RemoveMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID) error
 }
 
 type JWTManagerInterface interface {

@@ -10,7 +10,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/service"
 )
 
-// handleServiceError маппит доменные ошибки сервиса на HTTP-коды
 func handleServiceError(c *gin.Context, err error) {
 	switch {
 	//User errors
@@ -25,7 +24,7 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, repository.ErrUserNotFound):
 		respondError(c, http.StatusNotFound, "user_not_found", "User not found")
 
-	//Project errors
+	// Project errors
 	case errors.Is(err, service.ErrProjectNotFound):
 		respondError(c, http.StatusNotFound, "project_not_found", err.Error())
 	case errors.Is(err, service.ErrAccessDenied):
@@ -39,7 +38,7 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidDescriptionProject):
 		respondError(c, http.StatusBadRequest, "invalid_project_description", err.Error())
 
-	//Column errors (НОВОЕ!)
+	// 🔹 Column errors
 	case errors.Is(err, service.ErrColumnNotFound):
 		respondError(c, http.StatusNotFound, "column_not_found", err.Error())
 	case errors.Is(err, service.ErrColumnHasTasks):
@@ -67,10 +66,23 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidStatus):
 		respondError(c, http.StatusBadRequest, "invalid_status", err.Error())
 
-	//internal server error
+	//Member errors
+	case errors.Is(err, service.ErrMemberNotFound):
+		respondError(c, http.StatusNotFound, "member_not_found", err.Error())
+	case errors.Is(err, service.ErrMemberAlreadyExists):
+		respondError(c, http.StatusConflict, "member_already_exists", err.Error())
+	case errors.Is(err, service.ErrCannotRemoveLastOwner):
+		respondError(c, http.StatusConflict, "cannot_remove_last_owner", err.Error())
+	case errors.Is(err, service.ErrCannotRemoveSelf):
+		respondError(c, http.StatusForbidden, "cannot_remove_self", err.Error())
+	case errors.Is(err, service.ErrInvalidRole):
+		respondError(c, http.StatusBadRequest, "invalid_role", err.Error())
+	case errors.Is(err, service.ErrInvalidUUID):
+		respondError(c, http.StatusBadRequest, "invalid_uuid_format", err.Error())
+
+	// internal server error
 	default:
-		respondError(c, http.StatusInternalServerError, "internal_error", err.Error())
-		// пока что выводи реалиную ошибку, на релизе заменить на internal server error
+		respondError(c, http.StatusInternalServerError, "internal_error", err.Error()) // потом сделать чтобы возвращал общую ошибку
 	}
 }
 
