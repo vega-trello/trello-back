@@ -86,7 +86,6 @@ func setupTagRouter(t *testing.T, tagSvc *mockTagService, jwtSecret string) *gin
 		rg.PATCH("/projects/:projectUUID/tag", h.UpdateTag)
 		rg.DELETE("/projects/:projectUUID/tag", h.DeleteTag)
 
-		// Task-scoped endpoints (taskID - query param, tagID - path for DELETE)
 		rg.GET("/projects/:projectUUID/task/tags", h.ListTaskTags)
 		rg.POST("/projects/:projectUUID/task/tags", h.AddTagToTask)
 		rg.DELETE("/projects/:projectUUID/task/tags/:tagID", h.RemoveTagFromTask)

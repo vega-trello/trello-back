@@ -329,7 +329,6 @@ func TestAssigneeHandler_RemoveAssignee_MissingTaskID(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	// 🔹 Нет taskID
 	req := httptest.NewRequest("DELETE", "/projects/"+projectUUID.String()+"/assignee?userUUID="+assigneeUUID.String(), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()

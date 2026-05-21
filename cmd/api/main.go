@@ -133,7 +133,7 @@ func main() {
 		go func() {
 			log.Printf("Starting HTTP redirect server on :80")
 			if err := http.ListenAndServe(":80", m.HTTPHandler(nil)); err != nil {
-				log.Printf("⚠ HTTP redirect server error: %v", err)
+				log.Printf("HTTP redirect server error: %v", err)
 			}
 		}()
 
@@ -166,7 +166,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("⚠ Shutting down server gracefully...")
+	log.Println("Shutting down server gracefully...")
 
 	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()

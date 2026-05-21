@@ -2,7 +2,7 @@ package dto
 
 import "github.com/vega-trello/trello-back/internal/utils"
 
-// CreateTaskRequest — POST /projects/{projectUUID}/tasks
+// CreateTaskRequest - POST /projects/{projectUUID}/tasks
 type CreateTaskRequest struct {
 	Title       string  `json:"title" binding:"required,min=1,max=256"`
 	Description string  `json:"description" binding:"omitempty,max=2048"`

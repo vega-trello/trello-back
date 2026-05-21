@@ -110,7 +110,6 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 		return
 	}
 
-	// 🔹 Дополнительная валидация
 	if err := req.Validate(); err != nil {
 		respondError(c, http.StatusBadRequest, "validation_error", err.Error())
 		return

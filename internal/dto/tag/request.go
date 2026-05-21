@@ -23,8 +23,6 @@ func (r CreateTagRequest) Validate() error {
 	return nil
 }
 
-// UpdateTagRequest соответствует схеме UpdateTag в OpenAPI
-// По контракту оба поля обязательны при обновлении
 type UpdateTagRequest struct {
 	Name  string `json:"name"`
 	Color string `json:"color"`

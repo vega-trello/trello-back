@@ -14,7 +14,7 @@ func (r *CreateStatusRequest) Validate() error {
 	return nil
 }
 
-// UpdateStatusRequest — PATCH /statuses/{id}
+// UpdateStatusRequest - PATCH /statuses/{id}
 // Используем omitempty для удобства клиента (частичное обновляем)
 type UpdateStatusRequest struct {
 	Name string `json:"name" binding:"required,min=1,max=32"`

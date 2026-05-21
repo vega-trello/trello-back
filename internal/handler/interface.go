@@ -24,7 +24,7 @@ type UserServiceInterface interface {
 }
 
 type ProjectServiceInterface interface {
-	GetUserProjects(ctx context.Context, userUUID uuid.UUID) ([]*model.Project, error) // 🔹 GetUserProjects, не ListUserProjects
+	GetUserProjects(ctx context.Context, userUUID uuid.UUID) ([]*model.Project, error)
 	CreateProject(ctx context.Context, creatorUUID uuid.UUID, title string, description *string) (*model.Project, error)
 	GetProject(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (*model.Project, error)
 	UpdateProject(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, title *string, description *string) (*model.Project, error)
