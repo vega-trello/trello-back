@@ -8,6 +8,7 @@ import (
 	dto_assignee "github.com/vega-trello/trello-back/internal/dto/assignee"
 	dto_col "github.com/vega-trello/trello-back/internal/dto/column"
 	dto_member "github.com/vega-trello/trello-back/internal/dto/member"
+	dto_status "github.com/vega-trello/trello-back/internal/dto/status"
 	dto_tag "github.com/vega-trello/trello-back/internal/dto/tag"
 	dto_task "github.com/vega-trello/trello-back/internal/dto/task"
 	"github.com/vega-trello/trello-back/internal/model"
@@ -80,6 +81,14 @@ type RoleServiceInterface interface {
 	UpdateRole(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID, name string, description *string, permissionIDs []int) (*model.Role, error)
 	DeleteRole(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) error
 	GetRolePermissions(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) ([]*model.Permission, error)
+}
+
+type StatusServiceInterface interface {
+	CreateStatus(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto_status.CreateStatusRequest) (*model.ProjectStatus, error)
+	GetProjectStatuses(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.ProjectStatus, error)
+	GetStatus(ctx context.Context, projectUUID uuid.UUID, statusID int, userUUID uuid.UUID) (*model.ProjectStatus, error)
+	UpdateStatus(ctx context.Context, projectUUID uuid.UUID, statusID int, userUUID uuid.UUID, req dto_status.UpdateStatusRequest) (*model.ProjectStatus, error)
+	DeleteStatus(ctx context.Context, projectUUID uuid.UUID, statusID int, userUUID uuid.UUID) error
 }
 
 type JWTManagerInterface interface {

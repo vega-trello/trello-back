@@ -19,6 +19,8 @@ func SetupRouter(
 	memberHandler *handler.MemberHandler,
 	assigneeHandler *handler.AssigneeHandler,
 	tagHandler *handler.TagHandler,
+	roleHandler *handler.RoleHandler,
+	statusHandler *handler.StatusHandler,
 	jwtManager *auth.JWTManager,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
@@ -108,6 +110,26 @@ func SetupRouter(
 		rg.GET("/task/tags", tagHandler.ListTaskTags)
 		rg.POST("/task/tags", tagHandler.AddTagToTask)
 		rg.DELETE("/task/tags/:tagID", tagHandler.RemoveTagFromTask)
+
+		// Role endpoints
+		roles := rg.Group("/roles")
+		{
+			roles.GET("", roleHandler.ListProjectRoles)
+			roles.POST("", roleHandler.CreateRole)
+			roles.GET("/:roleID", roleHandler.GetRole)
+			roles.PATCH("/:roleID", roleHandler.UpdateRole)
+			roles.DELETE("/:roleID", roleHandler.DeleteRole)
+			roles.GET("/:roleID/permissions", roleHandler.GetRolePermissions)
+		}
+
+		statuses := rg.Group("/statuses")
+		{
+			statuses.GET("", statusHandler.ListProjectStatuses)
+			statuses.POST("", statusHandler.CreateStatus)
+			statuses.GET("/:statusID", statusHandler.GetStatus)
+			statuses.PATCH("/:statusID", statusHandler.UpdateStatus)
+			statuses.DELETE("/:statusID", statusHandler.DeleteStatus)
+		}
 	}
 
 	return r

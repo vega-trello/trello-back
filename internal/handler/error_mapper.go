@@ -38,7 +38,7 @@ func handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidDescriptionProject):
 		respondError(c, http.StatusBadRequest, "invalid_project_description", err.Error())
 
-	// 🔹 Column errors
+	//	Column errors
 	case errors.Is(err, service.ErrColumnNotFound):
 		respondError(c, http.StatusNotFound, "column_not_found", err.Error())
 	case errors.Is(err, service.ErrColumnHasTasks):
@@ -117,6 +117,16 @@ func handleServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_role_description", err.Error())
 	case errors.Is(err, service.ErrNoPermissions):
 		respondError(c, http.StatusBadRequest, "no_permissions", err.Error())
+
+	//status errors
+	case errors.Is(err, service.ErrStatusNotFound):
+		respondError(c, http.StatusNotFound, "status_not_found", err.Error())
+	case errors.Is(err, service.ErrStatusAlreadyExists):
+		respondError(c, http.StatusConflict, "status_already_exists", err.Error())
+	case errors.Is(err, service.ErrInvalidStatusName):
+		respondError(c, http.StatusBadRequest, "invalid_status_name", err.Error())
+	case errors.Is(err, service.ErrStatusHasActiveTasks):
+		respondError(c, http.StatusConflict, "status_has_active_tasks", err.Error())
 
 	// internal server error
 	default:

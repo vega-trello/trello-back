@@ -101,7 +101,15 @@ func main() {
 	tagService := service.NewTagService(tagRepo)
 	tagHandler := handler.NewTagHandler(tagService)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, jwtManager)
+	roleRepo := repository.NewRoleRepository(pool)
+	roleService := service.NewRoleService(roleRepo)
+	roleHandler := handler.NewRoleHandler(roleService)
+
+	statusRepo := repository.NewStatusRepository(pool)
+	statusService := service.NewStatusService(statusRepo)
+	statusHandler := handler.NewStatusHandler(statusService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, roleHandler, statusHandler, jwtManager)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
