@@ -103,6 +103,8 @@ func handleServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "tag_not_in_project", err.Error())
 	case errors.Is(err, service.ErrTaskNotInProject):
 		respondError(c, http.StatusBadRequest, "task_not_in_project", err.Error())
+	case errors.Is(err, service.ErrTagAlreadyAttached):
+		respondError(c, http.StatusConflict, "tag_already_attached", err.Error())
 
 	//role errors
 	case errors.Is(err, service.ErrRoleNotFound):

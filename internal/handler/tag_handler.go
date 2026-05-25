@@ -210,15 +210,19 @@ func (h *TagHandler) AddTagToTask(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		TagID int `json:"tag_id" binding:"required,min=1"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "invalid_request", err.Error())
+	tagIDStr := c.Query("tagID")
+	if tagIDStr == "" {
+		respondError(c, http.StatusBadRequest, "missing_tag_id", "tagID query parameter is required")
 		return
 	}
 
-	if err := h.tagService.AddTagToTask(c.Request.Context(), projectUUID, userUUID, taskID, req.TagID); err != nil {
+	tagID, err := strconv.Atoi(tagIDStr)
+	if err != nil || tagID <= 0 {
+		respondError(c, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		return
+	}
+
+	if err := h.tagService.AddTagToTask(c.Request.Context(), projectUUID, userUUID, taskID, tagID); err != nil {
 		handleServiceError(c, err)
 		return
 	}

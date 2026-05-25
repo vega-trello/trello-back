@@ -17,6 +17,7 @@ var (
 	ErrTagNotFound        = errors.New("tag not found")
 	ErrTagNotInProject    = errors.New("tag does not belong to this project")
 	ErrTaskNotInProject   = errors.New("task does not belong to this project")
+	ErrTagAlreadyAttached = errors.New("tag is already attached to this task")
 )
 
 // hexColorRegex для валидации в сервисе (дублирует DTO для надёжности)
@@ -173,6 +174,9 @@ func (s *TagService) AddTagToTask(
 		}
 		if err.Error() == "task does not belong to this project" {
 			return ErrTaskNotInProject
+		}
+		if err.Error() == "duplicate key value violates unique constraint" {
+			return ErrTagAlreadyAttached
 		}
 		return err
 	}

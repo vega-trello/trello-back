@@ -323,6 +323,57 @@ func TestTagService_AddTagToTask_TagNotInProject(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestTagService_AddTagToTask_TaskNotInProject(t *testing.T) {
+	mockRepo := new(MockTagRepository)
+	svc := NewTagService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("AddToTask", ctx, projectUUID, userUUID, 1, 2).
+		Return(errors.New("task does not belong to this project"))
+
+	err := svc.AddTagToTask(ctx, projectUUID, userUUID, 1, 2)
+
+	assert.ErrorIs(t, err, ErrTaskNotInProject)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTagService_AddTagToTask_AlreadyAttached(t *testing.T) {
+	mockRepo := new(MockTagRepository)
+	svc := NewTagService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("AddToTask", ctx, projectUUID, userUUID, 1, 2).
+		Return(errors.New("duplicate key value violates unique constraint"))
+
+	err := svc.AddTagToTask(ctx, projectUUID, userUUID, 1, 2)
+
+	assert.ErrorIs(t, err, ErrTagAlreadyAttached)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTagService_AddTagToTask_TagNotFound(t *testing.T) {
+	mockRepo := new(MockTagRepository)
+	svc := NewTagService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("AddToTask", ctx, projectUUID, userUUID, 1, 2).
+		Return(ErrTagNotFound)
+
+	err := svc.AddTagToTask(ctx, projectUUID, userUUID, 1, 2)
+
+	assert.ErrorIs(t, err, ErrTagNotFound)
+	mockRepo.AssertExpectations(t)
+}
+
 func TestTagService_RemoveTagFromTask_Success(t *testing.T) {
 	mockRepo := new(MockTagRepository)
 	svc := NewTagService(mockRepo)

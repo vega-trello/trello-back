@@ -478,7 +478,6 @@ func TestTagHandler_ListTaskTags_MissingTaskID(t *testing.T) {
 	r := setupTagRouter(t, tagSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	// 🔹 Нет query-параметра taskID
 	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/task/tags", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -533,9 +532,7 @@ func TestTagHandler_AddTagToTask_Success(t *testing.T) {
 	r := setupTagRouter(t, tagSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"tag_id": 15}`)
-	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID), body)
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID)+"&tagID="+strconv.Itoa(tagID), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -546,10 +543,83 @@ func TestTagHandler_AddTagToTask_Success(t *testing.T) {
 	assert.True(t, called)
 }
 
+func TestTagHandler_AddTagToTask_MissingTaskID(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	tagID := 15
+	tagSvc := &mockTagService{}
+	r := setupTagRouter(t, tagSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	// 🔹 Нет taskID в query
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?tagID="+strconv.Itoa(tagID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "missing_task_id", http.StatusBadRequest)
+}
+
+func TestTagHandler_AddTagToTask_MissingTagID(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	taskID := 105
+	tagSvc := &mockTagService{}
+	r := setupTagRouter(t, tagSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "missing_tag_id", http.StatusBadRequest)
+}
+
+func TestTagHandler_AddTagToTask_InvalidTaskID(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	tagSvc := &mockTagService{}
+	r := setupTagRouter(t, tagSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID=abc&tagID=15", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "invalid_task_id", http.StatusBadRequest)
+}
+
+func TestTagHandler_AddTagToTask_InvalidTagID(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	taskID := 105
+	tagSvc := &mockTagService{}
+	r := setupTagRouter(t, tagSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID)+"&tagID=abc", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "invalid_tag_id", http.StatusBadRequest)
+}
+
 func TestTagHandler_AddTagToTask_TagNotInProject(t *testing.T) {
 	userUUID := uuid.New()
 	projectUUID := uuid.New()
 	taskID := 105
+	tagID := 15
 	tagSvc := &mockTagService{
 		addToTaskFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID, tID int, tgID int) error {
 			return service.ErrTagNotInProject
@@ -559,9 +629,7 @@ func TestTagHandler_AddTagToTask_TagNotInProject(t *testing.T) {
 	r := setupTagRouter(t, tagSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"tag_id": 15}`)
-	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID), body)
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID)+"&tagID="+strconv.Itoa(tagID), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -569,6 +637,30 @@ func TestTagHandler_AddTagToTask_TagNotInProject(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	AssertErrorResponse(t, w.Body.Bytes(), "tag_not_in_project", http.StatusBadRequest)
+}
+
+func TestTagHandler_AddTagToTask_AlreadyAttached(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	taskID := 105
+	tagID := 15
+	tagSvc := &mockTagService{
+		addToTaskFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID, tID int, tgID int) error {
+			return service.ErrTagAlreadyAttached
+		},
+	}
+
+	r := setupTagRouter(t, tagSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/task/tags?taskID="+strconv.Itoa(taskID)+"&tagID="+strconv.Itoa(tagID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "tag_already_attached", http.StatusConflict)
 }
 
 func TestTagHandler_RemoveTagFromTask_Success(t *testing.T) {
@@ -598,7 +690,7 @@ func TestTagHandler_RemoveTagFromTask_Success(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNoContent, w.Code) // 🔹 204 без тела
+	assert.Equal(t, http.StatusNoContent, w.Code)
 	assert.Empty(t, w.Body.String())
 	assert.True(t, called)
 }
@@ -652,26 +744,19 @@ func TestTagHandler_Unauthorized_AllEndpoints(t *testing.T) {
 	endpoints := []struct {
 		method string
 		path   string
-		body   string
 	}{
-		{"GET", "/projects/" + uuid.New().String() + "/tag", ""},
-		{"POST", "/projects/" + uuid.New().String() + "/tag", `{"name":"Test","color":"#FF0000"}`},
-		{"PATCH", "/projects/" + uuid.New().String() + "/tag?tagID=1", `{"name":"New","color":"#00FF00"}`},
-		{"DELETE", "/projects/" + uuid.New().String() + "/tag?tagID=1", ""},
-		{"GET", "/projects/" + uuid.New().String() + "/task/tags?taskID=1", ""},
-		{"POST", "/projects/" + uuid.New().String() + "/task/tags?taskID=1", `{"tag_id":2}`},
-		{"DELETE", "/projects/" + uuid.New().String() + "/task/tags/2?taskID=1", ""},
+		{"GET", "/projects/" + uuid.New().String() + "/tag"},
+		{"POST", "/projects/" + uuid.New().String() + "/tag"},
+		{"PATCH", "/projects/" + uuid.New().String() + "/tag?tagID=1"},
+		{"DELETE", "/projects/" + uuid.New().String() + "/tag?tagID=1"},
+		{"GET", "/projects/" + uuid.New().String() + "/task/tags?taskID=1"},
+		{"POST", "/projects/" + uuid.New().String() + "/task/tags?taskID=1&tagID=2"}, // 🔹 Обновлено: оба параметра в query
+		{"DELETE", "/projects/" + uuid.New().String() + "/task/tags/2?taskID=1"},
 	}
 
 	for _, ep := range endpoints {
 		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
-			var req *http.Request
-			if ep.body != "" {
-				req = httptest.NewRequest(ep.method, ep.path, bytes.NewBufferString(ep.body))
-				req.Header.Set("Content-Type", "application/json")
-			} else {
-				req = httptest.NewRequest(ep.method, ep.path, nil)
-			}
+			req := httptest.NewRequest(ep.method, ep.path, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
