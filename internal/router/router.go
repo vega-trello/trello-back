@@ -62,8 +62,9 @@ func SetupRouter(
 	protected.Use(middleware.Auth(jwtManager))
 	{
 		//User endpoints
-		protected.GET("/user", userHandler.GetProfile)
-		protected.PATCH("/user", userHandler.UpdateProfile)
+		protected.GET("/self", userHandler.GetSelfProfile)
+		protected.PATCH("/self", userHandler.UpdateSelfProfile)
+		protected.GET("/user", userHandler.GetOtherUserProfile)
 
 		//Project endpoints
 		protected.GET("/projects", projectHandler.ListProjects)

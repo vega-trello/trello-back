@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/acme/autocert"
 
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/vega-trello/trello-back/internal/auth"
 	"github.com/vega-trello/trello-back/internal/handler"
 	"github.com/vega-trello/trello-back/internal/repository"
