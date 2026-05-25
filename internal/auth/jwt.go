@@ -19,6 +19,7 @@ var (
 // Claims расширяет стандартные JWT claims, если позже понадобятся кастомные поля
 type Claims struct {
 	jwt.RegisteredClaims
+	Permissions []string `json:"permissions"`
 }
 
 type JWTManager struct {
@@ -36,7 +37,7 @@ func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWTManager {
 
 // Generate создаёт подписанный JWT для пользователя
 // Алгоритм: HS256
-func (m *JWTManager) Generate(userUUID uuid.UUID) (string, error) {
+func (m *JWTManager) Generate(userUUID uuid.UUID, permissions []string) (string, error) {
 	now := time.Now()
 
 	claims := &Claims{
@@ -45,13 +46,15 @@ func (m *JWTManager) Generate(userUUID uuid.UUID) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.tokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
+		Permissions: permissions,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(m.secretKey)
 }
 
-func (m *JWTManager) Parse(tokenString string) (uuid.UUID, error) {
+// ParseWithClaims парсит токен и возвращает полные claims (для RBAC)
+func (m *JWTManager) ParseWithClaims(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -61,20 +64,30 @@ func (m *JWTManager) Parse(tokenString string) (uuid.UUID, error) {
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return uuid.Nil, ErrTokenExpired
+			return nil, ErrTokenExpired
 		}
 		if errors.Is(err, jwt.ErrTokenMalformed) {
-			return uuid.Nil, ErrTokenMalformed
+			return nil, ErrTokenMalformed
 		}
 		if errors.Is(err, jwt.ErrTokenSignatureInvalid) {
-			return uuid.Nil, ErrSignatureInvalid
+			return nil, ErrSignatureInvalid
 		}
-		return uuid.Nil, fmt.Errorf("%w: %v", ErrTokenInvalid, err)
+		return nil, fmt.Errorf("%w: %v", ErrTokenInvalid, err)
 	}
 
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
-		return uuid.Nil, ErrTokenInvalid
+		return nil, ErrTokenInvalid
+	}
+
+	return claims, nil
+}
+
+// Parse (старый метод) - оставляем для обратной совместимости
+func (m *JWTManager) Parse(tokenString string) (uuid.UUID, error) {
+	claims, err := m.ParseWithClaims(tokenString)
+	if err != nil {
+		return uuid.Nil, err
 	}
 
 	userUUID, err := uuid.Parse(claims.Subject)
@@ -83,4 +96,13 @@ func (m *JWTManager) Parse(tokenString string) (uuid.UUID, error) {
 	}
 
 	return userUUID, nil
+}
+
+func (c *Claims) HasPermission(required string) bool {
+	for _, perm := range c.Permissions {
+		if perm == required {
+			return true
+		}
+	}
+	return false
 }
