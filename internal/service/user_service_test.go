@@ -325,13 +325,12 @@ func TestUserService_LoginBySSO_RepoError(t *testing.T) {
 
 	_, err := svc.LoginBySSO(ctx, provider, externalID, username, metadata)
 
-	// Ошибка репозитория обёрнута в ошибку сервиса
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "service: SSO login")
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_GetProfile_Success(t *testing.T) {
+func TestUserService_GetSelfProfile_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -348,7 +347,7 @@ func TestUserService_GetProfile_Success(t *testing.T) {
 
 	mockRepo.On("GetSelfUser", ctx, testUUID).Return(expectedSelf, nil)
 
-	result, err := svc.GetProfile(ctx, testUUID)
+	result, err := svc.GetSelfProfile(ctx, testUUID)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedSelf.UUID, result.UUID)
@@ -356,7 +355,7 @@ func TestUserService_GetProfile_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_GetProfile_NotFound(t *testing.T) {
+func TestUserService_GetSelfProfile_NotFound(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -365,13 +364,71 @@ func TestUserService_GetProfile_NotFound(t *testing.T) {
 
 	mockRepo.On("GetSelfUser", ctx, testUUID).Return(nil, repository.ErrUserNotFound)
 
-	_, err := svc.GetProfile(ctx, testUUID)
+	_, err := svc.GetSelfProfile(ctx, testUUID)
 
 	assert.ErrorIs(t, err, repository.ErrUserNotFound)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_Success_ChangeUsername(t *testing.T) {
+func TestUserService_GetOtherUserProfile_Success(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	svc := NewUserService(mockRepo)
+
+	ctx := context.Background()
+	targetUUID := uuid.New()
+
+	// Репозиторий возвращает полную модель (возможно, с чувствительными полями)
+	fullUser := &model.User{
+		UUID:     targetUUID,
+		Username: "otheruser",
+		UserType: "manual",
+	}
+
+	mockRepo.On("FindUserByUUID", ctx, targetUUID).Return(fullUser, nil)
+
+	result, err := svc.GetOtherUserProfile(ctx, targetUUID)
+
+	assert.NoError(t, err)
+	// Сервис возвращает только публичные поля
+	assert.Equal(t, targetUUID, result.UUID)
+	assert.Equal(t, "otheruser", result.Username)
+	assert.Equal(t, "manual", result.UserType)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestUserService_GetOtherUserProfile_NotFound(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	svc := NewUserService(mockRepo)
+
+	ctx := context.Background()
+	targetUUID := uuid.New()
+
+	mockRepo.On("FindUserByUUID", ctx, targetUUID).Return(nil, repository.ErrUserNotFound)
+
+	_, err := svc.GetOtherUserProfile(ctx, targetUUID)
+
+	assert.ErrorIs(t, err, repository.ErrUserNotFound)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestUserService_GetOtherUserProfile_RepoError(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	svc := NewUserService(mockRepo)
+
+	ctx := context.Background()
+	targetUUID := uuid.New()
+	repoErr := errors.New("database error")
+
+	mockRepo.On("FindUserByUUID", ctx, targetUUID).Return(nil, repoErr)
+
+	_, err := svc.GetOtherUserProfile(ctx, targetUUID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "service: get other user profile")
+	mockRepo.AssertExpectations(t)
+}
+
+func TestUserService_UpdateSelfProfile_Success_ChangeUsername(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -392,14 +449,14 @@ func TestUserService_UpdateProfile_Success_ChangeUsername(t *testing.T) {
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, oldPass, newUsername, newPass).
 		Return(updatedSelf, nil)
 
-	result, err := svc.UpdateProfile(ctx, testUUID, oldPass, newUsername, newPass)
+	result, err := svc.UpdateSelfProfile(ctx, testUUID, oldPass, newUsername, newPass)
 
 	assert.NoError(t, err)
 	assert.Equal(t, newUsername, result.Username)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_Success_ChangePassword(t *testing.T) {
+func TestUserService_UpdateSelfProfile_Success_ChangePassword(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -420,27 +477,27 @@ func TestUserService_UpdateProfile_Success_ChangePassword(t *testing.T) {
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, oldPass, newUsername, newPass).
 		Return(updatedSelf, nil)
 
-	result, err := svc.UpdateProfile(ctx, testUUID, oldPass, newUsername, newPass)
+	result, err := svc.UpdateSelfProfile(ctx, testUUID, oldPass, newUsername, newPass)
 
 	assert.NoError(t, err)
 	assert.Equal(t, updatedSelf.UUID, result.UUID)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_NewPasswordTooShort(t *testing.T) {
+func TestUserService_UpdateSelfProfile_NewPasswordTooShort(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
 	ctx := context.Background()
 	testUUID := uuid.New()
 
-	_, err := svc.UpdateProfile(ctx, testUUID, "old", "new", "123")
+	_, err := svc.UpdateSelfProfile(ctx, testUUID, "old", "new", "123")
 
 	assert.ErrorIs(t, err, ErrPasswordTooShort)
 	mockRepo.AssertNotCalled(t, "UpdateSelfUser")
 }
 
-func TestUserService_UpdateProfile_WrongOldPassword(t *testing.T) {
+func TestUserService_UpdateSelfProfile_WrongOldPassword(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -450,32 +507,30 @@ func TestUserService_UpdateProfile_WrongOldPassword(t *testing.T) {
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, "wrong", "new", "").
 		Return(nil, repository.ErrInvalidCredentials)
 
-	_, err := svc.UpdateProfile(ctx, testUUID, "wrong", "new", "")
+	_, err := svc.UpdateSelfProfile(ctx, testUUID, "wrong", "new", "")
 
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_SSO_CannotChangePassword(t *testing.T) {
+func TestUserService_UpdateSelfProfile_SSO_CannotChangePassword(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
 	ctx := context.Background()
 	testUUID := uuid.New()
-
 	newPassword := "NewPass123"
 
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, "", "", newPassword).
 		Return(nil, repository.ErrSSOUserPasswordChange)
 
-	_, err := svc.UpdateProfile(ctx, testUUID, "", "", newPassword)
+	_, err := svc.UpdateSelfProfile(ctx, testUUID, "", "", newPassword)
 
 	assert.ErrorIs(t, err, ErrSSOUserPasswordChange)
-
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_UsernameConflict(t *testing.T) {
+func TestUserService_UpdateSelfProfile_UsernameConflict(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -485,13 +540,13 @@ func TestUserService_UpdateProfile_UsernameConflict(t *testing.T) {
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, "pass", "taken", "").
 		Return(nil, repository.ErrUserAlreadyExists)
 
-	_, err := svc.UpdateProfile(ctx, testUUID, "pass", "taken", "")
+	_, err := svc.UpdateSelfProfile(ctx, testUUID, "pass", "taken", "")
 
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestUserService_UpdateProfile_UserNotFound(t *testing.T) {
+func TestUserService_UpdateSelfProfile_UserNotFound(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	svc := NewUserService(mockRepo)
 
@@ -501,7 +556,7 @@ func TestUserService_UpdateProfile_UserNotFound(t *testing.T) {
 	mockRepo.On("UpdateSelfUser", ctx, testUUID, "pass", "new", "").
 		Return(nil, repository.ErrUserNotFound)
 
-	_, err := svc.UpdateProfile(ctx, testUUID, "pass", "new", "")
+	_, err := svc.UpdateSelfProfile(ctx, testUUID, "pass", "new", "")
 
 	assert.ErrorIs(t, err, repository.ErrUserNotFound)
 	mockRepo.AssertExpectations(t)

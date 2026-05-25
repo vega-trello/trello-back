@@ -87,8 +87,23 @@ func (s *UserService) LoginBySSO(
 	return user, nil
 }
 
-// GetProfile возвращает расширенную информацию о текущем пользователе
-func (s *UserService) GetProfile(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
+func (s *UserService) GetOtherUserProfile(ctx context.Context, targetUserUUID uuid.UUID) (*model.User, error) {
+	user, err := s.repo.FindUserByUUID(ctx, targetUserUUID)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, fmt.Errorf("service: user not found: %w", repository.ErrUserNotFound)
+		}
+		return nil, fmt.Errorf("service: get other user profile: %w", err)
+	}
+
+	return &model.User{
+		UUID:     user.UUID,
+		Username: user.Username,
+		UserType: user.UserType,
+	}, nil
+}
+
+func (s *UserService) GetSelfProfile(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
 	user, err := s.repo.GetSelfUser(ctx, userUUID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
@@ -99,8 +114,7 @@ func (s *UserService) GetProfile(ctx context.Context, userUUID uuid.UUID) (*mode
 	return user, nil
 }
 
-// UpdateProfile обновляет имя и/или пароль текущего пользователя
-func (s *UserService) UpdateProfile(
+func (s *UserService) UpdateSelfProfile(
 	ctx context.Context,
 	userUUID uuid.UUID,
 	oldPassword string,
