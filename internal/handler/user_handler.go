@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	dto "github.com/vega-trello/trello-back/internal/dto/user"
 	"github.com/vega-trello/trello-back/internal/middleware"
 	"github.com/vega-trello/trello-back/internal/utils"
@@ -119,15 +120,15 @@ func (h *UserHandler) ExchangeSSOToken(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.SSOExchangeResponse{Token: token})
 }
 
-// GetProfile GET /user
-func (h *UserHandler) GetProfile(c *gin.Context) {
+// GetSelfProfile GET /self
+func (h *UserHandler) GetSelfProfile(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
 		respondError(c, http.StatusUnauthorized, "context_error", "User UUID not found in context")
 		return
 	}
 
-	selfUser, err := h.userService.GetProfile(c.Request.Context(), userUUID)
+	selfUser, err := h.userService.GetSelfProfile(c.Request.Context(), userUUID)
 	if err != nil {
 		handleServiceError(c, err)
 		return
@@ -136,8 +137,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromSelfUserModel(selfUser))
 }
 
-// UpdateProfile PATCH /user
-func (h *UserHandler) UpdateProfile(c *gin.Context) {
+func (h *UserHandler) UpdateSelfProfile(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
 		respondError(c, http.StatusUnauthorized, "context_error", "User UUID not found in context")
@@ -150,13 +150,36 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.userService.UpdateProfile(c.Request.Context(), userUUID, req.OldPassword, req.Username, req.Password)
+	updated, err := h.userService.UpdateSelfProfile(c.Request.Context(), userUUID, req.OldPassword, req.Username, req.Password)
 	if err != nil {
 		handleServiceError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, dto.FromSelfUserModel(updated))
+}
+
+func (h *UserHandler) GetOtherUserProfile(c *gin.Context) {
+
+	targetUserUUIDStr := c.Query("userUUID")
+	if targetUserUUIDStr == "" {
+		respondError(c, http.StatusBadRequest, "missing_user_uuid", "userUUID query parameter is required")
+		return
+	}
+
+	targetUserUUID, err := uuid.Parse(targetUserUUIDStr)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_user_uuid", "Invalid user UUID format")
+		return
+	}
+
+	user, err := h.userService.GetOtherUserProfile(c.Request.Context(), targetUserUUID)
+	if err != nil {
+		handleServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.FromUserModel(user))
 }
 
 // Logout POST /auth/logout

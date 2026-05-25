@@ -26,12 +26,13 @@ import (
 )
 
 type mockUserService struct {
-	registerFunc      func(ctx context.Context, username, password string) (*model.User, error)
-	loginFunc         func(ctx context.Context, username, password string) (*model.User, error)
-	loginSSOFunc      func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error)
-	getProfileFunc    func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	updateProfileFunc func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error)
-	logoutFunc        func(ctx context.Context, userUUID uuid.UUID) error
+	registerFunc            func(ctx context.Context, username, password string) (*model.User, error)
+	loginFunc               func(ctx context.Context, username, password string) (*model.User, error)
+	loginSSOFunc            func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error)
+	getSelfProfileFunc      func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
+	updateSelfProfileFunc   func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error)
+	getOtherUserProfileFunc func(ctx context.Context, targetUserUUID uuid.UUID) (*model.User, error)
+	logoutFunc              func(ctx context.Context, userUUID uuid.UUID) error
 }
 
 func (m *mockUserService) Register(ctx context.Context, username, password string) (*model.User, error) {
@@ -52,15 +53,21 @@ func (m *mockUserService) LoginBySSO(ctx context.Context, provider, extID, usern
 	}
 	return nil, nil
 }
-func (m *mockUserService) GetProfile(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
-	if m.getProfileFunc != nil {
-		return m.getProfileFunc(ctx, userUUID)
+func (m *mockUserService) GetSelfProfile(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
+	if m.getSelfProfileFunc != nil {
+		return m.getSelfProfileFunc(ctx, userUUID)
 	}
 	return nil, nil
 }
-func (m *mockUserService) UpdateProfile(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
-	if m.updateProfileFunc != nil {
-		return m.updateProfileFunc(ctx, userUUID, oldPass, newName, newPass)
+func (m *mockUserService) UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+	if m.updateSelfProfileFunc != nil {
+		return m.updateSelfProfileFunc(ctx, userUUID, oldPass, newName, newPass)
+	}
+	return nil, nil
+}
+func (m *mockUserService) GetOtherUserProfile(ctx context.Context, targetUserUUID uuid.UUID) (*model.User, error) {
+	if m.getOtherUserProfileFunc != nil {
+		return m.getOtherUserProfileFunc(ctx, targetUserUUID)
 	}
 	return nil, nil
 }
@@ -131,8 +138,12 @@ func setupProtectedTestRouter(t *testing.T, svc *mockUserService, jwtSecret stri
 	r.Use(gin.Recovery())
 	protected := r.Group("")
 	protected.Use(middleware.Auth(jwtMgr))
-	protected.GET("/user", h.GetProfile)
-	protected.PATCH("/user", h.UpdateProfile)
+
+	protected.GET("/self", h.GetSelfProfile)
+	protected.PATCH("/self", h.UpdateSelfProfile)
+
+	protected.GET("/user", h.GetOtherUserProfile)
+
 	return r, jwtMgr
 }
 
@@ -323,10 +334,10 @@ func TestHandler_ExchangeSSOToken_ServiceError(t *testing.T) {
 	assert.Equal(t, "username_taken", errResp.Error)
 }
 
-func TestHandler_GetProfile_Success(t *testing.T) {
+func TestHandler_GetSelfProfile_Success(t *testing.T) {
 	testUUID := uuid.New()
 	svc := &mockUserService{
-		getProfileFunc: func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
+		getSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
 			return &model.SelfUser{
 				User:      model.User{UUID: userUUID, Username: "testuser", UserType: "manual"},
 				CreatedAt: time.Now(), UpdatedAt: time.Now(),
@@ -335,10 +346,11 @@ func TestHandler_GetProfile_Success(t *testing.T) {
 	}
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
-	req := httptest.NewRequest("GET", "/user", nil)
+	req := httptest.NewRequest("GET", "/self", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp dto.SelfUserResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
@@ -346,26 +358,111 @@ func TestHandler_GetProfile_Success(t *testing.T) {
 	assert.Equal(t, "manual", resp.UserType)
 }
 
-func TestHandler_GetProfile_UserNotFound(t *testing.T) {
+func TestHandler_GetSelfProfile_UserNotFound(t *testing.T) {
 	testUUID := uuid.New()
 	svc := &mockUserService{
-		getProfileFunc: func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
+		getSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error) {
 			return nil, repository.ErrUserNotFound
 		},
 	}
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/self", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandler_GetOtherUserProfile_Success(t *testing.T) {
+	testUUID := uuid.New()
+	targetUUID := uuid.New()
+
+	svc := &mockUserService{
+		getOtherUserProfileFunc: func(ctx context.Context, tUUID uuid.UUID) (*model.User, error) {
+			assert.Equal(t, targetUUID, tUUID)
+			return &model.User{
+				UUID:     tUUID,
+				Username: "otheruser",
+				UserType: "manual",
+			}, nil
+		},
+	}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/user?userUUID="+targetUUID.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp dto.UserResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, "otheruser", resp.Username)
+	assert.Equal(t, "manual", resp.UserType)
+	assert.Equal(t, targetUUID, resp.UUID)
+}
+
+func TestHandler_GetOtherUserProfile_MissingUserUUID(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
 	req := httptest.NewRequest("GET", "/user", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "missing_user_uuid", errResp.Error)
+}
+
+func TestHandler_GetOtherUserProfile_InvalidUserUUID(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/user?userUUID=not-a-uuid", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "invalid_user_uuid", errResp.Error)
+}
+
+func TestHandler_GetOtherUserProfile_NotFound(t *testing.T) {
+	testUUID := uuid.New()
+	targetUUID := uuid.New()
+	svc := &mockUserService{
+		getOtherUserProfileFunc: func(ctx context.Context, tUUID uuid.UUID) (*model.User, error) {
+			return nil, repository.ErrUserNotFound
+		},
+	}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/user?userUUID="+targetUUID.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestHandler_UpdateProfile_Success(t *testing.T) {
+func TestHandler_UpdateSelfProfile_Success(t *testing.T) {
 	testUUID := uuid.New()
 	svc := &mockUserService{
-		updateProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
 			return &model.SelfUser{
 				User:      model.User{UUID: userUUID, Username: newName, UserType: "manual"},
 				CreatedAt: time.Now(), UpdatedAt: time.Now(),
@@ -374,33 +471,37 @@ func TestHandler_UpdateProfile_Success(t *testing.T) {
 	}
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
+
 	body := bytes.NewBufferString(`{"old_password":"oldpass","username":"newname","password":""}`)
-	req := httptest.NewRequest("PATCH", "/user", body)
+	req := httptest.NewRequest("PATCH", "/self", body) // 🔹 Путь изменён: /self
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp dto.SelfUserResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.Equal(t, "newname", resp.Username)
 }
 
-func TestHandler_UpdateProfile_SSO_CannotChangePassword(t *testing.T) {
+func TestHandler_UpdateSelfProfile_SSO_CannotChangePassword(t *testing.T) {
 	testUUID := uuid.New()
 	svc := &mockUserService{
-		updateProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
 			return nil, service.ErrSSOUserPasswordChange
 		},
 	}
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
+
 	body := bytes.NewBufferString(`{"old_password":"dummy","username":"","password":"NewPass123"}`)
-	req := httptest.NewRequest("PATCH", "/user", body)
+	req := httptest.NewRequest("PATCH", "/self", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	var errResp dto.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
@@ -456,4 +557,27 @@ func TestHandler_Register_JWTGenerationFails(t *testing.T) {
 	var errResp dto.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
 	assert.Equal(t, "token_generation_failed", errResp.Error)
+}
+
+func TestHandler_Unauthorized_AllEndpoints(t *testing.T) {
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/self"},
+		{"PATCH", "/self"},
+		{"GET", "/user?userUUID=" + uuid.New().String()},
+	}
+
+	for _, ep := range endpoints {
+		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
+			req := httptest.NewRequest(ep.method, ep.path, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+		})
+	}
 }
