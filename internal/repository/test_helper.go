@@ -43,20 +43,11 @@ func ensureSystemRoles(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	for _, r := range roles {
-		// Пробуем с created_at, если ошибка - пробуем без него
 		_, err := pool.Exec(ctx, `
 			INSERT INTO role (id, project_uuid, name, description)
-			VALUES ($1, NULL, $2, $3,
+			VALUES ($1, NULL, $2, $3)
 			ON CONFLICT (id) DO NOTHING
 		`, r.id, r.name, r.description)
-
-		if err != nil {
-			_, err = pool.Exec(ctx, `
-				INSERT INTO role (id, project_uuid, name, description)
-				VALUES ($1, NULL, $2, $3)
-				ON CONFLICT (id) DO NOTHING
-			`, r.id, r.name, r.description)
-		}
 
 		if err != nil {
 			t.Logf("Warning: failed to ensure system role %d: %v", r.id, err)
@@ -66,7 +57,7 @@ func ensureSystemRoles(t *testing.T, pool *pgxpool.Pool) {
 	_, err := pool.Exec(ctx, `
 		SELECT SETVAL(
 			(SELECT pg_get_serial_sequence('role', 'id')),
-			(SELECT COALESCE(MAX(id), 0) + 1 FROM role),
+			5,  -- Следующий ID после системных ролей (1-4)
 			false
 		)
 	`)
@@ -85,10 +76,7 @@ func setupTestPool(t *testing.T) *pgxpool.Pool {
 	pool, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err, "failed to connect to test database")
 
-	ensureSystemRoles(t, pool)
-
 	t.Cleanup(func() {
-		// Очищаем данные, но не трогаем системные роли
 		_, _ = pool.Exec(ctx, `
 			TRUNCATE 
 				task_tag, task_assignee, tasks, project_column, project_status,
@@ -96,17 +84,19 @@ func setupTestPool(t *testing.T) *pgxpool.Pool {
 				sso_user, manual_user, base_user, project 
 			RESTART IDENTITY CASCADE;
 		`)
-		// Очищаем только роли проектов (не системные с project_uuid IS NULL)
 		_, _ = pool.Exec(ctx, `DELETE FROM role WHERE project_uuid IS NOT NULL`)
-
 		_, _ = pool.Exec(ctx, `
 			SELECT SETVAL(
 				(SELECT pg_get_serial_sequence('role', 'id')),
-				(SELECT COALESCE(MAX(id), 4) + 1 FROM role),
+				5,
 				false
 			)
 		`)
 	})
+
+	// 🔹 И только потом гарантируем наличие системных ролей
+	ensureSystemRoles(t, pool)
+
 	return pool
 }
 

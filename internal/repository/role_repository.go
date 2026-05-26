@@ -37,8 +37,12 @@ func (r *RoleRepository) Create(
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+	hasAccess, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID)
+	if err != nil {
 		return nil, err
+	}
+	if !hasAccess {
+		return nil, ErrAccessDenied
 	}
 
 	var role model.Role
@@ -53,7 +57,6 @@ func (r *RoleRepository) Create(
 		return nil, fmt.Errorf("repository: create role: %w", err)
 	}
 
-	// Привязка разрешений
 	for _, permID := range permissionIDs {
 		_, err = tx.Exec(ctx, `INSERT INTO role_permission (role_id, permission_id) VALUES ($1, $2)`, role.ID, permID)
 		if err != nil {
@@ -72,9 +75,14 @@ func (r *RoleRepository) FindByProjectUUID(
 	projectUUID uuid.UUID,
 	userUUID uuid.UUID,
 ) ([]*model.Role, error) {
-	if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+	hasAccess, err := r.checkUserAccess(ctx, projectUUID, userUUID)
+	if err != nil {
 		return nil, err
 	}
+	if !hasAccess {
+		return nil, ErrAccessDenied
+	}
+
 	rows, err := r.db.Query(ctx, `
 		SELECT id, project_uuid, name, description 
 		FROM role 
@@ -119,9 +127,14 @@ func (r *RoleRepository) FindByID(
 	if err != nil {
 		return nil, fmt.Errorf("repository: find role by id: %w", err)
 	}
+
 	if role.ProjectUUID != nil {
-		if _, err := r.checkUserAccess(ctx, projectUUID, userUUID); err != nil {
+		hasAccess, err := r.checkUserAccess(ctx, projectUUID, userUUID)
+		if err != nil {
 			return nil, err
+		}
+		if !hasAccess {
+			return nil, ErrAccessDenied
 		}
 	}
 	return &role, nil
@@ -153,8 +166,13 @@ func (r *RoleRepository) Update(
 	if existingProjectUUID == nil {
 		return nil, ErrCannotDeleteSystemRole
 	}
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+
+	hasAccess, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID)
+	if err != nil {
 		return nil, err
+	}
+	if !hasAccess {
+		return nil, ErrAccessDenied
 	}
 
 	var role model.Role
@@ -210,8 +228,13 @@ func (r *RoleRepository) Delete(
 	if existingProjectUUID == nil {
 		return ErrCannotDeleteSystemRole
 	}
-	if _, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID); err != nil {
+
+	hasAccess, err := r.checkUserAccessTx(ctx, tx, projectUUID, userUUID)
+	if err != nil {
 		return err
+	}
+	if !hasAccess {
+		return ErrAccessDenied
 	}
 
 	var inUse bool
@@ -267,14 +290,77 @@ func (r *RoleRepository) FindPermissions(
 	return perms, nil
 }
 
+func (r *RoleRepository) GetUserRole(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	userUUID uuid.UUID,
+) (*model.Role, error) {
+	var role model.Role
+	err := r.db.QueryRow(ctx, `
+		SELECT r.id, r.project_uuid, r.name, r.description
+		FROM role r
+		JOIN project_member pm ON r.id = pm.role_id
+		WHERE pm.project_uuid = $1 AND pm.user_uuid = $2
+	`, projectUUID, userUUID).Scan(
+		&role.ID, &role.ProjectUUID, &role.Name, &role.Description,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrRoleNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repository: get user role: %w", err)
+	}
+	return &role, nil
+}
+
+func (r *RoleRepository) GetPermissionsByRoleID(
+	ctx context.Context,
+	roleID int,
+) ([]*model.Permission, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT p.id, p.name, p.description
+		FROM permission p
+		JOIN role_permission rp ON p.id = rp.permission_id
+		WHERE rp.role_id = $1
+		ORDER BY p.name ASC
+	`, roleID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: get permissions by role: %w", err)
+	}
+	defer rows.Close()
+
+	var perms []*model.Permission
+	for rows.Next() {
+		var p model.Permission
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description); err != nil {
+			return nil, fmt.Errorf("repository: scan permission: %w", err)
+		}
+		perms = append(perms, &p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: iterate permissions: %w", err)
+	}
+	return perms, nil
+}
+
 func (r *RoleRepository) checkUserAccess(ctx context.Context, projectUUID, userUUID uuid.UUID) (bool, error) {
 	var exists bool
-	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_member 
+			WHERE project_uuid = $1 AND user_uuid = $2
+		)
+	`, projectUUID, userUUID).Scan(&exists)
 	return exists, err
 }
 
 func (r *RoleRepository) checkUserAccessTx(ctx context.Context, tx pgx.Tx, projectUUID, userUUID uuid.UUID) (bool, error) {
 	var exists bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_member WHERE project_uuid = $1 AND user_uuid = $2)`, projectUUID, userUUID).Scan(&exists)
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM project_member 
+			WHERE project_uuid = $1 AND user_uuid = $2
+		)
+	`, projectUUID, userUUID).Scan(&exists)
 	return exists, err
 }

@@ -1,4 +1,3 @@
-// internal/middleware/auth.go
 package middleware
 
 import (
@@ -12,6 +11,10 @@ import (
 )
 
 const ContextKeyUserUUID = "userUUID"
+
+type contextKey string
+
+const contextKeyClaims contextKey = "claims"
 
 func Auth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -34,13 +37,25 @@ func Auth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 		}
 
 		token := parts[1]
-		userUUID, err := jwtManager.Parse(token)
+
+		claims, err := jwtManager.ParseWithClaims(token)
 		if err != nil {
 			handleAuthError(c, err)
 			return
 		}
 
+		c.Set(string(contextKeyClaims), claims)
+
+		userUUID, err := uuid.Parse(claims.Subject)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, dto.ErrorResponse{
+				Error:   "context_error",
+				Message: "Failed to parse user UUID from token",
+			})
+			return
+		}
 		c.Set(ContextKeyUserUUID, userUUID)
+
 		c.Next()
 	}
 }
@@ -65,10 +80,20 @@ func handleAuthError(c *gin.Context, err error) {
 }
 
 func GetUserUUID(c *gin.Context) (uuid.UUID, bool) {
+
 	val, exists := c.Get(ContextKeyUserUUID)
 	if !exists {
 		return uuid.Nil, false
 	}
 	userUUID, ok := val.(uuid.UUID)
 	return userUUID, ok
+}
+
+func getClaims(c *gin.Context) (*auth.Claims, bool) {
+	val, exists := c.Get(string(contextKeyClaims))
+	if !exists {
+		return nil, false
+	}
+	claims, ok := val.(*auth.Claims)
+	return claims, ok
 }
