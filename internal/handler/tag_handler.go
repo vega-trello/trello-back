@@ -1,3 +1,4 @@
+// internal/handler/tag_handler.go
 package handler
 
 import (
@@ -10,10 +11,12 @@ import (
 	"github.com/vega-trello/trello-back/internal/middleware"
 )
 
+// TagHandler обрабатывает HTTP-запросы, связанные с тегами
 type TagHandler struct {
 	tagService TagServiceInterface
 }
 
+// NewTagHandler создаёт новый экземпляр TagHandler
 func NewTagHandler(tagService TagServiceInterface) *TagHandler {
 	return &TagHandler{tagService: tagService}
 }
@@ -86,15 +89,21 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 		return
 	}
 
+	_, err := uuid.Parse(c.Param("projectUUID"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_uuid", "Invalid project UUID format")
+		return
+	}
+
 	tagIDStr := c.Query("tagID")
 	if tagIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_tag_id", "tagID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "tagID query parameter is required")
 		return
 	}
 
 	tagID, err := strconv.Atoi(tagIDStr)
 	if err != nil || tagID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "tagID must be a positive integer")
 		return
 	}
 
@@ -127,15 +136,21 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 		return
 	}
 
+	_, err := uuid.Parse(c.Param("projectUUID"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_uuid", "Invalid project UUID format")
+		return
+	}
+
 	tagIDStr := c.Query("tagID")
 	if tagIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_tag_id", "tagID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "tagID query parameter is required")
 		return
 	}
 
 	tagID, err := strconv.Atoi(tagIDStr)
 	if err != nil || tagID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "tagID must be a positive integer")
 		return
 	}
 
@@ -164,13 +179,13 @@ func (h *TagHandler) ListTaskTags(c *gin.Context) {
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -183,7 +198,7 @@ func (h *TagHandler) ListTaskTags(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromModels(tags))
 }
 
-// AddTagToTask POST /projects/{projectUUID}/task/tags?taskID={id}
+// AddTagToTask POST /projects/{projectUUID}/task/tags?taskID={id}&tagID={id}
 // Привязывает тег к задаче
 func (h *TagHandler) AddTagToTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
@@ -200,25 +215,25 @@ func (h *TagHandler) AddTagToTask(c *gin.Context) {
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
 	tagIDStr := c.Query("tagID")
 	if tagIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_tag_id", "tagID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "tagID query parameter is required")
 		return
 	}
 
 	tagID, err := strconv.Atoi(tagIDStr)
 	if err != nil || tagID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "tagID must be a positive integer")
 		return
 	}
 
@@ -230,7 +245,7 @@ func (h *TagHandler) AddTagToTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// RemoveTagFromTask DELETE /projects/{projectUUID}/task/tags/{tagID}?taskID={id}
+// RemoveTagFromTask DELETE /projects/{projectUUID}/task/tags?taskID={id}&tagID={id}
 // Отвязывает тег от задачи
 func (h *TagHandler) RemoveTagFromTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
@@ -245,27 +260,27 @@ func (h *TagHandler) RemoveTagFromTask(c *gin.Context) {
 		return
 	}
 
-	tagIDStr := c.Param("tagID")
+	tagIDStr := c.Query("tagID")
 	if tagIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_tag_id", "tagID path parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "tagID query parameter is required")
 		return
 	}
 
 	tagID, err := strconv.Atoi(tagIDStr)
 	if err != nil || tagID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "tagID must be a positive integer")
 		return
 	}
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
