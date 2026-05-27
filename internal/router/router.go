@@ -9,6 +9,7 @@ import (
 	"github.com/vega-trello/trello-back/internal/auth"
 	"github.com/vega-trello/trello-back/internal/handler"
 	"github.com/vega-trello/trello-back/internal/middleware"
+	"github.com/vega-trello/trello-back/internal/service"
 )
 
 func SetupRouter(
@@ -22,6 +23,7 @@ func SetupRouter(
 	roleHandler *handler.RoleHandler,
 	statusHandler *handler.StatusHandler,
 	jwtManager *auth.JWTManager,
+	permissionChecker service.PermissionChecker,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
 
@@ -58,78 +60,162 @@ func SetupRouter(
 		authGroup.POST("/logout", middleware.Auth(jwtManager), userHandler.Logout)
 	}
 
+	// PROTECTED ROUTES (все требуют аутентификации)
 	protected := r.Group("")
 	protected.Use(middleware.Auth(jwtManager))
 	{
-		//User endpoints
+		// User endpoints
 		protected.GET("/self", userHandler.GetSelfProfile)
 		protected.PATCH("/self", userHandler.UpdateSelfProfile)
 		protected.GET("/user", userHandler.GetOtherUserProfile)
 
-		//Project endpoints
+		// Project endpoints
 		protected.GET("/projects", projectHandler.ListProjects)
 		protected.POST("/projects", projectHandler.CreateProject)
-		protected.GET("/projects/:projectUUID", projectHandler.GetProject)
-		protected.PATCH("/projects/:projectUUID", projectHandler.UpdateProject)
-		protected.DELETE("/projects/:projectUUID", projectHandler.DeleteProject)
+		protected.GET("/projects/:projectUUID",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			projectHandler.GetProject)
+		protected.PATCH("/projects/:projectUUID",
+			middleware.RequirePermission(permissionChecker, service.PermManageProject),
+			projectHandler.UpdateProject)
+		protected.DELETE("/projects/:projectUUID",
+			middleware.RequirePermission(permissionChecker, service.PermManageProject),
+			projectHandler.DeleteProject)
 
-		//Column endpoints
-		protected.GET("/projects/:projectUUID/columns", columnHandler.ListProjectColumns)
-		protected.POST("/projects/:projectUUID/columns", columnHandler.CreateColumn)
-		protected.GET("/columns/:columnID", columnHandler.GetColumn)
-		protected.PATCH("/columns/:columnID", columnHandler.UpdateColumn)
-		protected.DELETE("/columns/:columnID", columnHandler.DeleteColumn)
-		protected.POST("/columns/:columnID/move", columnHandler.MoveColumn)
+		// Column endpoints
+		protected.GET("/projects/:projectUUID/columns",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			columnHandler.ListProjectColumns)
+		protected.POST("/projects/:projectUUID/columns",
+			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			columnHandler.CreateColumn)
+		protected.GET("/columns/:columnID",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			columnHandler.GetColumn)
+		protected.PATCH("/columns/:columnID",
+			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			columnHandler.UpdateColumn)
+		protected.DELETE("/columns/:columnID",
+			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			columnHandler.DeleteColumn)
+		protected.POST("/columns/:columnID/move",
+			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			columnHandler.MoveColumn)
 
 		//Task endpoints
-		protected.GET("/projects/:projectUUID/tasks", taskHandler.ListProjectTasks)
-		protected.POST("/projects/:projectUUID/tasks", taskHandler.CreateTask)
-		protected.GET("/projects/:projectUUID/task", taskHandler.GetTask)
-		protected.PATCH("/projects/:projectUUID/task", taskHandler.UpdateTask)
-		protected.DELETE("/projects/:projectUUID/task", taskHandler.DeleteTask)
+		protected.GET("/projects/:projectUUID/tasks",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			taskHandler.ListProjectTasks)
+		protected.POST("/projects/:projectUUID/tasks",
+			middleware.RequirePermission(permissionChecker, service.PermManageTasks),
+			taskHandler.CreateTask)
+		protected.GET("/projects/:projectUUID/task",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			taskHandler.GetTask)
+		protected.PATCH("/projects/:projectUUID/task",
+			middleware.RequirePermission(permissionChecker, service.PermManageTasks),
+			taskHandler.UpdateTask)
+		protected.DELETE("/projects/:projectUUID/task",
+			middleware.RequirePermission(permissionChecker, service.PermManageTasks),
+			taskHandler.DeleteTask)
 
-		//Member endpoints
-		protected.GET("/projects/:projectUUID/members", memberHandler.ListProjectMembers)
-		protected.POST("/projects/:projectUUID/members", memberHandler.AddMember)
-		protected.GET("/projects/:projectUUID/member", memberHandler.GetMember)
-		protected.PATCH("/projects/:projectUUID/member", memberHandler.UpdateMemberRole)
-		protected.DELETE("/projects/:projectUUID/member", memberHandler.RemoveMember)
+		// Member endpoints
+		protected.GET("/projects/:projectUUID/members",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			memberHandler.ListProjectMembers)
+		protected.POST("/projects/:projectUUID/members",
+			middleware.RequirePermission(permissionChecker, service.PermManageMembers),
+			memberHandler.AddMember)
+		protected.GET("/projects/:projectUUID/member",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			memberHandler.GetMember)
+		protected.PATCH("/projects/:projectUUID/member",
+			middleware.RequirePermission(permissionChecker, service.PermManageMembers),
+			memberHandler.UpdateMemberRole)
+		protected.DELETE("/projects/:projectUUID/member",
+			middleware.RequirePermission(permissionChecker, service.PermManageMembers),
+			memberHandler.RemoveMember)
 
-		//assignee endpoints
-		rg := protected.Group("/projects/:projectUUID")
-		rg.GET("/assignees", assigneeHandler.ListTaskAssignees)
-		rg.POST("/assignees", assigneeHandler.AddAssignee)
-		rg.DELETE("/assignee", assigneeHandler.RemoveAssignee)
-
-		//project tags endpoints
-		rg.GET("/tag", tagHandler.ListProjectTags)
-		rg.POST("/tag", tagHandler.CreateTag)
-		rg.PATCH("/tag", tagHandler.UpdateTag)
-		rg.DELETE("/tag", tagHandler.DeleteTag)
-
-		// Task tags endpoints
-		rg.GET("/task/tags", tagHandler.ListTaskTags)
-		rg.POST("/task/tags", tagHandler.AddTagToTask)
-		rg.DELETE("/task/tags/:tagID", tagHandler.RemoveTagFromTask)
-
-		// Role endpoints
-		roles := rg.Group("/roles")
+		// Assignee endpoints
+		assigneeGroup := protected.Group("/projects/:projectUUID")
 		{
-			roles.GET("", roleHandler.ListProjectRoles)
-			roles.POST("", roleHandler.CreateRole)
-			roles.GET("/:roleID", roleHandler.GetRole)
-			roles.PATCH("/:roleID", roleHandler.UpdateRole)
-			roles.DELETE("/:roleID", roleHandler.DeleteRole)
-			roles.GET("/:roleID/permissions", roleHandler.GetRolePermissions)
+			assigneeGroup.GET("/assignees",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				assigneeHandler.ListTaskAssignees)
+			assigneeGroup.POST("/assignees",
+				middleware.RequirePermission(permissionChecker, service.PermManageAssignees),
+				assigneeHandler.AddAssignee)
+			assigneeGroup.DELETE("/assignee",
+				middleware.RequirePermission(permissionChecker, service.PermManageAssignees),
+				assigneeHandler.RemoveAssignee)
 		}
 
-		statuses := rg.Group("/statuses")
+		// Tag endpoints
+		protected.GET("/projects/:projectUUID/tag",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			tagHandler.ListProjectTags)
+		protected.POST("/projects/:projectUUID/tag",
+			middleware.RequirePermission(permissionChecker, service.PermManageTags),
+			tagHandler.CreateTag)
+		protected.PATCH("/projects/:projectUUID/tag",
+			middleware.RequirePermission(permissionChecker, service.PermManageTags),
+			tagHandler.UpdateTag)
+		protected.DELETE("/projects/:projectUUID/tag",
+			middleware.RequirePermission(permissionChecker, service.PermManageTags),
+			tagHandler.DeleteTag)
+
+		// ── Tag endpoints
+		protected.GET("/projects/:projectUUID/task/tags",
+			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			tagHandler.ListTaskTags)
+		protected.POST("/projects/:projectUUID/task/tags",
+			middleware.RequirePermission(permissionChecker, service.PermManageTags),
+			tagHandler.AddTagToTask)
+		protected.DELETE("/projects/:projectUUID/task/tags",
+			middleware.RequirePermission(permissionChecker, service.PermManageTags),
+			tagHandler.RemoveTagFromTask)
+
+		// Role endpoints
+		roleGroup := protected.Group("/projects/:projectUUID/roles")
 		{
-			statuses.GET("", statusHandler.ListProjectStatuses)
-			statuses.POST("", statusHandler.CreateStatus)
-			statuses.GET("/:statusID", statusHandler.GetStatus)
-			statuses.PATCH("/:statusID", statusHandler.UpdateStatus)
-			statuses.DELETE("/:statusID", statusHandler.DeleteStatus)
+			roleGroup.GET("",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				roleHandler.ListProjectRoles)
+			roleGroup.POST("",
+				middleware.RequirePermission(permissionChecker, service.PermManageRoles),
+				roleHandler.CreateRole)
+			roleGroup.GET("/:roleID",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				roleHandler.GetRole)
+			roleGroup.PATCH("/:roleID",
+				middleware.RequirePermission(permissionChecker, service.PermManageRoles),
+				roleHandler.UpdateRole)
+			roleGroup.DELETE("/:roleID",
+				middleware.RequirePermission(permissionChecker, service.PermManageRoles),
+				roleHandler.DeleteRole)
+			roleGroup.GET("/:roleID/permissions",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				roleHandler.GetRolePermissions)
+		}
+
+		// Status endpoints
+		statusGroup := protected.Group("/projects/:projectUUID/statuses")
+		{
+			statusGroup.GET("",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				statusHandler.ListProjectStatuses)
+			statusGroup.POST("",
+				middleware.RequirePermission(permissionChecker, service.PermManageStatuses),
+				statusHandler.CreateStatus)
+			statusGroup.GET("/:statusID",
+				middleware.RequirePermission(permissionChecker, service.PermViewProject),
+				statusHandler.GetStatus)
+			statusGroup.PATCH("/:statusID",
+				middleware.RequirePermission(permissionChecker, service.PermManageStatuses),
+				statusHandler.UpdateStatus)
+			statusGroup.DELETE("/:statusID",
+				middleware.RequirePermission(permissionChecker, service.PermManageStatuses),
+				statusHandler.DeleteStatus)
 		}
 	}
 

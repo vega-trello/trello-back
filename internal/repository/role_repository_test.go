@@ -329,6 +329,73 @@ func TestRoleRepository_GetPermissionsByRoleID_NotFound(t *testing.T) {
 	assert.Empty(t, perms)
 }
 
+func TestRoleRepository_GetPermissionNamesByID_Success(t *testing.T) {
+	pool := setupTestPool(t)
+	ctx := context.Background()
+	repo := NewRoleRepository(pool)
+
+	permID1 := ensurePermission(t, pool, "manage_tasks", "Manage tasks")
+	permID2 := ensurePermission(t, pool, "view_project", "View project")
+	permID3 := ensurePermission(t, pool, "manage_roles", "Manage roles")
+
+	result, err := repo.GetPermissionNamesByID(ctx, []int{permID1, permID2, permID3})
+
+	require.NoError(t, err)
+	assert.Len(t, result, 3)
+	assert.Equal(t, "manage_tasks", result[permID1])
+	assert.Equal(t, "view_project", result[permID2])
+	assert.Equal(t, "manage_roles", result[permID3])
+}
+
+func TestRoleRepository_GetPermissionNamesByID_EmptySlice(t *testing.T) {
+	pool := setupTestPool(t)
+	ctx := context.Background()
+	repo := NewRoleRepository(pool)
+
+	result, err := repo.GetPermissionNamesByID(ctx, []int{})
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+func TestRoleRepository_GetPermissionNamesByID_NotFound(t *testing.T) {
+	pool := setupTestPool(t)
+	ctx := context.Background()
+	repo := NewRoleRepository(pool)
+
+	_, err := repo.GetPermissionNamesByID(ctx, []int{99999})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "permission ID 99999 not found")
+}
+
+func TestRoleRepository_GetPermissionNamesByID_Mixed(t *testing.T) {
+	pool := setupTestPool(t)
+	ctx := context.Background()
+	repo := NewRoleRepository(pool)
+
+	permID := ensurePermission(t, pool, "manage_tasks", "Manage tasks")
+
+	_, err := repo.GetPermissionNamesByID(ctx, []int{permID, 99999})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "permission ID 99999 not found")
+}
+
+func TestRoleRepository_GetPermissionNamesByID_DuplicateIDs(t *testing.T) {
+	pool := setupTestPool(t)
+	ctx := context.Background()
+	repo := NewRoleRepository(pool)
+
+	permID := ensurePermission(t, pool, "manage_tasks", "Manage tasks")
+
+	result, err := repo.GetPermissionNamesByID(ctx, []int{permID, permID, permID})
+
+	require.NoError(t, err)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "manage_tasks", result[permID])
+}
+
 func ensurePermission(t *testing.T, pool *pgxpool.Pool, name, description string) int {
 	t.Helper()
 	ctx := context.Background()

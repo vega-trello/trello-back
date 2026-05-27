@@ -62,7 +62,7 @@ func TestAuth_ExpiredToken(t *testing.T) {
 	jwtMgr := auth.NewJWTManager("test-secret", time.Millisecond*10)
 	r := setupTestRouter(t, jwtMgr)
 
-	token, _ := jwtMgr.Generate(uuid.New(), []string{"view_project"})
+	token, _ := jwtMgr.Generate(uuid.New())
 	time.Sleep(time.Millisecond * 20)
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -79,7 +79,7 @@ func TestAuth_InvalidSignature(t *testing.T) {
 	jwtMgr2 := auth.NewJWTManager("secret-2", time.Hour)
 	r := setupTestRouter(t, jwtMgr2)
 
-	token, _ := jwtMgr1.Generate(uuid.New(), []string{"view_project"})
+	token, _ := jwtMgr1.Generate(uuid.New())
 
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -108,7 +108,7 @@ func TestAuth_Success(t *testing.T) {
 	r := setupTestRouter(t, jwtMgr)
 
 	originalUUID := uuid.New()
-	token, err := jwtMgr.Generate(originalUUID, []string{"view_project", "manage_tasks"})
+	token, err := jwtMgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -125,7 +125,7 @@ func TestAuth_Success_WithEmptyPermissions(t *testing.T) {
 	r := setupTestRouter(t, jwtMgr)
 
 	originalUUID := uuid.New()
-	token, err := jwtMgr.Generate(originalUUID, []string{})
+	token, err := jwtMgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -157,8 +157,7 @@ func TestAuth_ClaimsAddedToContext(t *testing.T) {
 	})
 
 	originalUUID := uuid.New()
-	expectedPerms := []string{"manage_tasks", "view_project"}
-	token, err := jwtMgr.Generate(originalUUID, expectedPerms)
+	token, err := jwtMgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/check-claims", nil)
@@ -167,19 +166,11 @@ func TestAuth_ClaimsAddedToContext(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
 	var resp map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
 	assert.Equal(t, originalUUID.String(), resp["user_uuid"])
 
 	permsRaw, ok := resp["permissions"].([]interface{})
-	require.True(t, ok, "permissions should be an array")
-
-	perms := make([]string, len(permsRaw))
-	for i, v := range permsRaw {
-		perms[i] = v.(string)
-	}
-
-	assert.ElementsMatch(t, expectedPerms, perms)
+	require.True(t, ok)
+	assert.Empty(t, permsRaw)
 }

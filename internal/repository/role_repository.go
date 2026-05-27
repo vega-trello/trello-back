@@ -364,3 +364,43 @@ func (r *RoleRepository) checkUserAccessTx(ctx context.Context, tx pgx.Tx, proje
 	`, projectUUID, userUUID).Scan(&exists)
 	return exists, err
 }
+
+// GetPermissionNamesByID возвращает мапу {permission_id: permission_name}
+// Используется для валидации: проверка, что все права из стандартного enum
+func (r *RoleRepository) GetPermissionNamesByID(
+	ctx context.Context,
+	permissionIDs []int,
+) (map[int]string, error) {
+	if len(permissionIDs) == 0 {
+		return map[int]string{}, nil
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT id, name FROM permission WHERE id = ANY($1)
+	`, permissionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("repository: get permission names: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]string, len(permissionIDs))
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("repository: scan permission: %w", err)
+		}
+		result[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: iterate permissions: %w", err)
+	}
+
+	for _, id := range permissionIDs {
+		if _, exists := result[id]; !exists {
+			return nil, fmt.Errorf("repository: permission ID %d not found", id)
+		}
+	}
+
+	return result, nil
+}

@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,7 +14,6 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-// MockRoleRepository — мок для интерфейса service.RoleRepository
 type MockRoleRepository struct {
 	mock.Mock
 }
@@ -63,7 +63,13 @@ func (m *MockRoleRepository) FindPermissions(ctx context.Context, projectUUID uu
 	return args.Get(0).([]*model.Permission), args.Error(1)
 }
 
-// ==================== TESTS ====================
+func (m *MockRoleRepository) GetPermissionNamesByID(ctx context.Context, permissionIDs []int) (map[int]string, error) {
+	args := m.Called(ctx, permissionIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[int]string), args.Error(1)
+}
 
 func TestRoleService_CreateRole_Success(t *testing.T) {
 	mockRepo := new(MockRoleRepository)
@@ -84,6 +90,9 @@ func TestRoleService_CreateRole_Success(t *testing.T) {
 		Description: descPtr,
 	}
 
+	permNames := map[int]string{1: "manage_tasks", 2: "view_project"}
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(permNames, nil)
+
 	mockRepo.On("Create", ctx, projectUUID, userUUID, name, descPtr, perms).
 		Return(expectedRole, nil)
 
@@ -102,14 +111,13 @@ func TestRoleService_CreateRole_InvalidName(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	// Пустое имя
 	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "", nil, []int{1})
 	assert.ErrorIs(t, err, ErrInvalidRoleName)
 
-	// Слишком длинное имя
 	_, err = svc.CreateRole(ctx, projectUUID, userUUID, "a_very_long_name_that_exceeds_32_characters_limit", nil, []int{1})
 	assert.ErrorIs(t, err, ErrInvalidRoleName)
 
+	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
 	mockRepo.AssertNotCalled(t, "Create")
 }
 
@@ -125,6 +133,7 @@ func TestRoleService_CreateRole_InvalidDescription(t *testing.T) {
 	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Valid", &longDesc, []int{1})
 	assert.ErrorIs(t, err, ErrInvalidDescription)
 
+	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
 	mockRepo.AssertNotCalled(t, "Create")
 }
 
@@ -139,7 +148,171 @@ func TestRoleService_CreateRole_NoPermissions(t *testing.T) {
 	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Admin", nil, []int{})
 	assert.ErrorIs(t, err, ErrNoPermissions)
 
+	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
 	mockRepo.AssertNotCalled(t, "Create")
+}
+
+func TestRoleService_CreateRole_InvalidPermission_NotInEnum(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	perms := []int{999}
+
+	permNames := map[int]string{999: "delete_all"}
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(permNames, nil)
+
+	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "BadRole", nil, perms)
+
+	assert.ErrorIs(t, err, ErrInvalidPermission)
+	assert.Contains(t, err.Error(), "permission ID 999 has name 'delete_all'")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Create")
+}
+
+func TestRoleService_CreateRole_InvalidPermission_RepoError(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	perms := []int{1}
+
+	permErr := errors.New("database connection failed")
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(nil, permErr)
+
+	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Role", nil, perms)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "validate permissions")
+	assert.Contains(t, err.Error(), "database connection failed")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Create")
+}
+
+func TestRoleService_CreateRole_InvalidPermission_NotFound(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	perms := []int{99999}
+
+	permErr := errors.New("repository: permission ID 99999 not found")
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(nil, permErr)
+
+	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Role", nil, perms)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "validate permissions")
+	assert.Contains(t, err.Error(), "permission ID 99999 not found")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Create")
+}
+
+func TestRoleService_CreateRole_ValidPermissions_AllStandard(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	perms := []int{1, 2, 3}
+
+	permNames := map[int]string{
+		1: "manage_tasks",
+		2: "view_project",
+		3: "manage_members",
+	}
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(permNames, nil)
+
+	expectedRole := &model.Role{ID: 10, ProjectUUID: &projectUUID, Name: "ValidRole"}
+	mockRepo.On("Create", ctx, projectUUID, userUUID, "ValidRole", mock.Anything, perms).
+		Return(expectedRole, nil)
+
+	role, err := svc.CreateRole(ctx, projectUUID, userUUID, "ValidRole", nil, perms)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedRole, role)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestRoleService_UpdateRole_Success(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	testRoleID := 10
+	newName := "Updated"
+	newDesc := "New description"
+	newDescPtr := &newDesc
+	perms := []int{2, 3}
+
+	expectedRole := &model.Role{
+		ID:          testRoleID,
+		ProjectUUID: &projectUUID,
+		Name:        newName,
+		Description: newDescPtr,
+	}
+
+	permNames := map[int]string{2: "view_project", 3: "manage_members"}
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(permNames, nil)
+
+	mockRepo.On("Update", ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, perms).
+		Return(expectedRole, nil)
+
+	role, err := svc.UpdateRole(ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, perms)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedRole, role)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestRoleService_UpdateRole_InvalidPermission(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	testRoleID := 10
+	perms := []int{999}
+
+	permNames := map[int]string{999: "delete_all"}
+	mockRepo.On("GetPermissionNamesByID", ctx, perms).Return(permNames, nil)
+
+	_, err := svc.UpdateRole(ctx, projectUUID, testRoleID, userUUID, "NewName", nil, perms)
+
+	assert.ErrorIs(t, err, ErrInvalidPermission)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestRoleService_UpdateRole_SystemRoleProtected(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	systemRoleID := 1 // owner
+
+	permNames := map[int]string{1: "view_project"}
+	mockRepo.On("GetPermissionNamesByID", ctx, []int{1}).Return(permNames, nil)
+
+	mockRepo.On("Update", ctx, projectUUID, systemRoleID, userUUID, "NewName", mock.Anything, mock.Anything).
+		Return(nil, ErrCannotDeleteSystemRole)
+
+	_, err := svc.UpdateRole(ctx, projectUUID, systemRoleID, userUUID, "NewName", nil, []int{1})
+
+	assert.ErrorIs(t, err, ErrSystemRoleProtected)
+	mockRepo.AssertExpectations(t)
 }
 
 func TestRoleService_GetRole_Success(t *testing.T) {
@@ -182,54 +355,6 @@ func TestRoleService_GetRole_NotFound(t *testing.T) {
 	_, err := svc.GetRole(ctx, projectUUID, testRoleID, userUUID)
 
 	assert.ErrorIs(t, err, ErrRoleNotFound)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestRoleService_UpdateRole_Success(t *testing.T) {
-	mockRepo := new(MockRoleRepository)
-	svc := NewRoleService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-	testRoleID := 10
-	newName := "Updated"
-	newDesc := "New description"
-	newDescPtr := &newDesc
-	perms := []int{2, 3}
-
-	expectedRole := &model.Role{
-		ID:          testRoleID,
-		ProjectUUID: &projectUUID,
-		Name:        newName,
-		Description: newDescPtr,
-	}
-
-	mockRepo.On("Update", ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, perms).
-		Return(expectedRole, nil)
-
-	role, err := svc.UpdateRole(ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, perms)
-
-	assert.NoError(t, err)
-	assert.Equal(t, expectedRole, role)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestRoleService_UpdateRole_SystemRoleProtected(t *testing.T) {
-	mockRepo := new(MockRoleRepository)
-	svc := NewRoleService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-	systemRoleID := 1 // owner
-
-	mockRepo.On("Update", ctx, projectUUID, systemRoleID, userUUID, "NewName", mock.Anything, mock.Anything).
-		Return(nil, ErrCannotDeleteSystemRole)
-
-	_, err := svc.UpdateRole(ctx, projectUUID, systemRoleID, userUUID, "NewName", nil, []int{1})
-
-	assert.ErrorIs(t, err, ErrSystemRoleProtected)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -297,8 +422,8 @@ func TestRoleService_GetRolePermissions_Success(t *testing.T) {
 	testRoleID := 10
 
 	expectedPerms := []*model.Permission{
-		{ID: 1, Name: "create_task", Description: "Create tasks"},
-		{ID: 2, Name: "update_task", Description: "Update tasks"},
+		{ID: 1, Name: "manage_tasks", Description: "Create tasks"},
+		{ID: 2, Name: "view_project", Description: "View project"},
 	}
 
 	mockRepo.On("FindPermissions", ctx, projectUUID, testRoleID, userUUID).

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/vega-trello/trello-back/internal/model"
@@ -16,6 +17,7 @@ var (
 	ErrRoleInUse              = errors.New("role is in use and cannot be deleted")
 	ErrRoleNotFound           = errors.New("role not found")
 	ErrCannotDeleteSystemRole = errors.New("system roles cannot be modified or deleted")
+	ErrInvalidPermission      = errors.New("invalid permission: not in standard enum") // 🔹 НОВОЕ
 )
 
 type RoleService struct {
@@ -24,6 +26,27 @@ type RoleService struct {
 
 func NewRoleService(repo RoleRepository) *RoleService {
 	return &RoleService{repo: repo}
+}
+
+// validatePermissionIDs проверяет, что все permissionIDs ведут на стандартные права
+// из service.AllPermissions() (например, "manage_tasks", а не произвольные строки)
+func (s *RoleService) validatePermissionIDs(ctx context.Context, permissionIDs []int) error {
+	if len(permissionIDs) == 0 {
+		return nil // Пустой список уже проверен выше
+	}
+
+	permNames, err := s.repo.GetPermissionNamesByID(ctx, permissionIDs)
+	if err != nil {
+		return fmt.Errorf("service: validate permissions: %w", err)
+	}
+
+	// Проверяем каждое право против стандартного enum
+	for id, name := range permNames {
+		if !IsValidPermission(name) {
+			return fmt.Errorf("%w: permission ID %d has name '%s'", ErrInvalidPermission, id, name)
+		}
+	}
+	return nil
 }
 
 // CreateRole создаёт новую роль
@@ -43,6 +66,10 @@ func (s *RoleService) CreateRole(
 	}
 	if len(permissionIDs) == 0 {
 		return nil, ErrNoPermissions
+	}
+
+	if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
+		return nil, err
 	}
 
 	return s.repo.Create(ctx, projectUUID, userUUID, name, description, permissionIDs)
@@ -66,7 +93,6 @@ func (s *RoleService) GetRole(
 ) (*model.Role, error) {
 	role, err := s.repo.FindByID(ctx, projectUUID, roleID, userUUID)
 	if err != nil {
-		// Маппинг ошибок репозитория в ошибки домена
 		if errors.Is(err, ErrRoleNotFound) {
 			return nil, ErrRoleNotFound
 		}
@@ -95,6 +121,10 @@ func (s *RoleService) UpdateRole(
 		return nil, ErrNoPermissions
 	}
 
+	if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
+		return nil, err
+	}
+
 	role, err := s.repo.Update(ctx, projectUUID, roleID, userUUID, name, description, permissionIDs)
 	if err != nil {
 		if errors.Is(err, ErrCannotDeleteSystemRole) {
@@ -118,15 +148,15 @@ func (s *RoleService) DeleteRole(
 	err := s.repo.Delete(ctx, projectUUID, roleID, userUUID)
 	if err != nil {
 		if errors.Is(err, ErrCannotDeleteSystemRole) {
-			return ErrSystemRoleProtected // 403 Forbidden
+			return ErrSystemRoleProtected
 		}
 		if errors.Is(err, ErrRoleInUse) {
-			return ErrRoleInUse // 409 Conflict
+			return ErrRoleInUse
 		}
 		if errors.Is(err, ErrRoleNotFound) {
-			return ErrRoleNotFound // 404 Not Found
+			return ErrRoleNotFound
 		}
-		return err // 500 Internal
+		return err
 	}
 	return nil
 }

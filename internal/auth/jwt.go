@@ -16,10 +16,9 @@ var (
 	ErrSignatureInvalid = errors.New("token signature is invalid")
 )
 
-// Claims расширяет стандартные JWT claims, если позже понадобятся кастомные поля
 type Claims struct {
 	jwt.RegisteredClaims
-	Permissions []string `json:"permissions"`
+	Permissions []string `json:"permissions,omitempty"`
 }
 
 type JWTManager struct {
@@ -27,7 +26,6 @@ type JWTManager struct {
 	tokenDuration time.Duration
 }
 
-// NewJWTManager создаёт менеджер токенов
 func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWTManager {
 	return &JWTManager{
 		secretKey:     []byte(secretKey),
@@ -35,9 +33,7 @@ func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWTManager {
 	}
 }
 
-// Generate создаёт подписанный JWT для пользователя
-// Алгоритм: HS256
-func (m *JWTManager) Generate(userUUID uuid.UUID, permissions []string) (string, error) {
+func (m *JWTManager) Generate(userUUID uuid.UUID) (string, error) {
 	now := time.Now()
 
 	claims := &Claims{
@@ -46,14 +42,13 @@ func (m *JWTManager) Generate(userUUID uuid.UUID, permissions []string) (string,
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.tokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
-		Permissions: permissions,
+		Permissions: []string{},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(m.secretKey)
 }
 
-// ParseWithClaims парсит токен и возвращает полные claims (для RBAC)
 func (m *JWTManager) ParseWithClaims(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -83,7 +78,6 @@ func (m *JWTManager) ParseWithClaims(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
-// Parse (старый метод) - оставляем для обратной совместимости
 func (m *JWTManager) Parse(tokenString string) (uuid.UUID, error) {
 	claims, err := m.ParseWithClaims(tokenString)
 	if err != nil {

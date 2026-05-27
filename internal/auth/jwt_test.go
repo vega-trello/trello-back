@@ -18,9 +18,8 @@ func setupTestManager(t *testing.T) *JWTManager {
 func TestJWTManager_GenerateAndParse_Success(t *testing.T) {
 	mgr := setupTestManager(t)
 	originalUUID := uuid.New()
-	permissions := []string{"manage_tasks", "view_project"}
 
-	token, err := mgr.Generate(originalUUID, permissions)
+	token, err := mgr.Generate(originalUUID)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -32,9 +31,8 @@ func TestJWTManager_GenerateAndParse_Success(t *testing.T) {
 func TestJWTManager_GenerateAndParseWithClaims_Success(t *testing.T) {
 	mgr := setupTestManager(t)
 	originalUUID := uuid.New()
-	permissions := []string{"manage_tasks", "view_project", "manage_members"}
 
-	token, err := mgr.Generate(originalUUID, permissions)
+	token, err := mgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	claims, err := mgr.ParseWithClaims(token)
@@ -44,7 +42,8 @@ func TestJWTManager_GenerateAndParseWithClaims_Success(t *testing.T) {
 	parsedUUID, err := uuid.Parse(claims.Subject)
 	require.NoError(t, err)
 	assert.Equal(t, originalUUID, parsedUUID)
-	assert.Equal(t, permissions, claims.Permissions)
+
+	assert.Empty(t, claims.Permissions)
 }
 
 func TestClaims_HasPermission_Success(t *testing.T) {
@@ -77,7 +76,7 @@ func TestJWTManager_Parse_Expired(t *testing.T) {
 	mgr := NewJWTManager("test-secret", time.Millisecond*10)
 	originalUUID := uuid.New()
 
-	token, err := mgr.Generate(originalUUID, []string{"view_project"})
+	token, err := mgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	time.Sleep(time.Millisecond * 20)
@@ -90,7 +89,7 @@ func TestJWTManager_ParseWithClaims_Expired(t *testing.T) {
 	mgr := NewJWTManager("test-secret", time.Millisecond*10)
 	originalUUID := uuid.New()
 
-	token, err := mgr.Generate(originalUUID, []string{"view_project"})
+	token, err := mgr.Generate(originalUUID)
 	require.NoError(t, err)
 
 	time.Sleep(time.Millisecond * 20)
@@ -104,7 +103,7 @@ func TestJWTManager_Parse_InvalidSignature(t *testing.T) {
 	mgr2 := NewJWTManager("secret-2", time.Hour)
 	originalUUID := uuid.New()
 
-	token, err := mgr1.Generate(originalUUID, []string{"view_project"})
+	token, err := mgr1.Generate(originalUUID)
 	require.NoError(t, err)
 
 	_, err = mgr2.Parse(token)
@@ -137,12 +136,11 @@ func TestJWTManager_Parse_InvalidSubject(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid subject in token")
 }
 
-func TestJWTManager_TokenContainsPermissions(t *testing.T) {
+func TestJWTManager_TokenContainsEmptyPermissions(t *testing.T) {
 	mgr := setupTestManager(t)
 	userUUID := uuid.New()
-	expectedPerms := []string{"manage_tasks", "manage_members", "view_project"}
 
-	token, err := mgr.Generate(userUUID, expectedPerms)
+	token, err := mgr.Generate(userUUID)
 	require.NoError(t, err)
 
 	parsedToken, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (interface{}, error) {
@@ -153,7 +151,7 @@ func TestJWTManager_TokenContainsPermissions(t *testing.T) {
 	claims, ok := parsedToken.Claims.(*Claims)
 	require.True(t, ok)
 
-	assert.Equal(t, expectedPerms, claims.Permissions)
+	assert.Empty(t, claims.Permissions)
 	assert.Equal(t, userUUID.String(), claims.Subject)
 }
 
@@ -161,7 +159,7 @@ func TestJWTManager_EmptyPermissions(t *testing.T) {
 	mgr := setupTestManager(t)
 	userUUID := uuid.New()
 
-	token, err := mgr.Generate(userUUID, []string{})
+	token, err := mgr.Generate(userUUID)
 	require.NoError(t, err)
 
 	claims, err := mgr.ParseWithClaims(token)

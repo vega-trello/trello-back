@@ -30,6 +30,7 @@ type RoleRepository interface {
 	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Role, error)
 	FindByID(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) (*model.Role, error)
 	Update(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID, name string, description *string, permissionIDs []int) (*model.Role, error)
+	GetPermissionNamesByID(ctx context.Context, permissionIDs []int) (map[int]string, error)
 	Delete(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) error
 	FindPermissions(ctx context.Context, projectUUID uuid.UUID, roleID int, userUUID uuid.UUID) ([]*model.Permission, error)
 }
@@ -68,8 +69,8 @@ type TaskRepository interface {
 	FindByColumn(ctx context.Context, columnID int, userUUID uuid.UUID) ([]*model.TaskDB, error)
 	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate *time.Time, endDate *time.Time, columnID *int, statusID *int, archived *bool) (*model.TaskDB, error)
 	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
-	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
-	Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
+	//Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	//Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 
 type MemberRepository interface {
@@ -97,4 +98,8 @@ type AssigneeRepository interface {
 	Add(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
 	Remove(ctx context.Context, projectUUID uuid.UUID, taskID int, assigneeUUID uuid.UUID, callerUUID uuid.UUID) error
 	FindByTask(ctx context.Context, projectUUID uuid.UUID, taskID int, callerUUID uuid.UUID) ([]*repoPkg.AssigneeResponse, error)
+}
+
+type PermissionChecker interface {
+	Check(ctx context.Context, projectUUID, userUUID uuid.UUID, requiredPerm string) error
 }

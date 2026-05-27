@@ -110,7 +110,9 @@ func main() {
 	statusService := service.NewStatusService(statusRepo)
 	statusHandler := handler.NewStatusHandler(statusService)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, roleHandler, statusHandler, jwtManager)
+	permChecker := service.NewPermissionChecker(roleRepo)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, roleHandler, statusHandler, jwtManager, permChecker)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

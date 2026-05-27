@@ -19,7 +19,6 @@ func NewTaskHandler(taskService TaskServiceInterface) *TaskHandler {
 }
 
 // ListProjectTasks GET /projects/{projectUUID}/tasks
-// Возвращает все задачи проекта, с опциональной фильтрацией по архиву
 func (h *TaskHandler) ListProjectTasks(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -103,13 +102,13 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -138,13 +137,13 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -184,13 +183,13 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -202,6 +201,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+/*
 // MoveTask POST /projects/{projectUUID}/tasks/{taskID}/move
 func (h *TaskHandler) MoveTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
@@ -216,15 +216,15 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 		return
 	}
 
-	taskIDStr := c.Param("taskID") // 🔹 Здесь taskID в path, если такой эндпоинт нужен
+	taskIDStr := c.Param("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID path parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID path parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -266,13 +266,13 @@ func (h *TaskHandler) ArchiveTask(c *gin.Context) {
 
 	taskIDStr := c.Param("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_task_id", "taskID path parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID path parameter is required")
 		return
 	}
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil || taskID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_task_id", "Invalid task ID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "taskID must be a positive integer")
 		return
 	}
 
@@ -297,3 +297,4 @@ func (h *TaskHandler) ArchiveTask(c *gin.Context) {
 
 	c.JSON(http.StatusOK, dto.FromModel(updated))
 }
+*/

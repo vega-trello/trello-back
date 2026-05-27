@@ -4,22 +4,34 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/vega-trello/trello-back/internal/auth"
 	dto "github.com/vega-trello/trello-back/internal/dto/user"
+	"github.com/vega-trello/trello-back/internal/service"
 )
 
-func setupTestRouterWithAuth(t *testing.T, requiredPerm string, userPerms []string) *gin.Engine {
+type mockPermissionChecker struct {
+	mock.Mock
+}
+
+func (m *mockPermissionChecker) Check(ctx context.Context, projectUUID, userUUID uuid.UUID, requiredPerm string) error {
+	args := m.Called(ctx, projectUUID, userUUID, requiredPerm)
+	return args.Error(0)
+}
+
+func setupTestRouterWithChecker(t *testing.T, checker service.PermissionChecker, requiredPerm string) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -27,28 +39,35 @@ func setupTestRouterWithAuth(t *testing.T, requiredPerm string, userPerms []stri
 	r := gin.New()
 
 	r.Use(Auth(jwtMgr))
+	r.Use(RequirePermission(checker, requiredPerm))
 
-	r.Use(RequirePermission(requiredPerm))
-
-	r.GET("/test", func(c *gin.Context) {
+	r.GET("/projects/:projectUUID/test", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "success"})
 	})
 
 	return r
 }
 
-func generateTestToken(t *testing.T, jwtMgr *auth.JWTManager, perms []string) string {
+func generateTestToken(t *testing.T, jwtMgr *auth.JWTManager, userUUID uuid.UUID) string {
 	t.Helper()
-	token, err := jwtMgr.Generate(uuid.New(), perms)
+	token, err := jwtMgr.Generate(userUUID)
 	require.NoError(t, err)
 	return token
 }
 
-func TestRequirePermission_Success_HasPermission(t *testing.T) {
-	r := setupTestRouterWithAuth(t, "manage_tasks", []string{"view_project", "manage_tasks", "manage_members"})
+func TestRequirePermission_Success_CheckerAllows(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	r := setupTestRouterWithChecker(t, mockChecker, "manage_tasks")
 
-	token := generateTestToken(t, auth.NewJWTManager("test-secret", time.Hour), []string{"manage_tasks"})
-	req := httptest.NewRequest("GET", "/test", nil)
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token := generateTestToken(t, jwtMgr, userUUID)
+
+	mockChecker.On("Check", mock.Anything, projectUUID, mock.AnythingOfType("uuid.UUID"), "manage_tasks").
+		Return(nil)
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/test", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -58,26 +77,22 @@ func TestRequirePermission_Success_HasPermission(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "success", resp["message"])
+	mockChecker.AssertExpectations(t)
 }
 
-func TestRequirePermission_Success_MultiplePermissions(t *testing.T) {
-	r := setupTestRouterWithAuth(t, "view_project", []string{"view_project", "manage_tasks", "manage_roles"})
+func TestRequirePermission_Denied_CheckerRejects(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	r := setupTestRouterWithChecker(t, mockChecker, "manage_roles")
 
-	token := generateTestToken(t, auth.NewJWTManager("test-secret", time.Hour), []string{"view_project", "manage_tasks", "manage_roles"})
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token := generateTestToken(t, jwtMgr, userUUID)
 
-	r.ServeHTTP(w, req)
+	mockChecker.On("Check", mock.Anything, projectUUID, mock.AnythingOfType("uuid.UUID"), "manage_roles").
+		Return(service.ErrPermissionDenied)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestRequirePermission_Denied_MissingPermission(t *testing.T) {
-	r := setupTestRouterWithAuth(t, "manage_roles", []string{"view_project", "manage_tasks"})
-
-	token := generateTestToken(t, auth.NewJWTManager("test-secret", time.Hour), []string{"view_project", "manage_tasks"})
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/test", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -88,141 +103,129 @@ func TestRequirePermission_Denied_MissingPermission(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
 	assert.Equal(t, "access_denied", errResp.Error)
 	assert.Contains(t, errResp.Message, "Insufficient permissions")
+	mockChecker.AssertExpectations(t)
 }
 
-func TestRequirePermission_Denied_EmptyPermissions(t *testing.T) {
-	r := setupTestRouterWithAuth(t, "manage_tasks", []string{})
+func TestRequirePermission_Denied_CheckerError(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	r := setupTestRouterWithChecker(t, mockChecker, "manage_tasks")
 
-	token := generateTestToken(t, auth.NewJWTManager("test-secret", time.Hour), []string{})
-	req := httptest.NewRequest("GET", "/test", nil)
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token := generateTestToken(t, jwtMgr, userUUID)
+
+	dbErr := errors.New("database connection failed")
+	mockChecker.On("Check", mock.Anything, projectUUID, mock.AnythingOfType("uuid.UUID"), "manage_tasks").
+		Return(dbErr)
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/test", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	var errResp dto.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
+	assert.Equal(t, "internal_error", errResp.Error)
+	mockChecker.AssertExpectations(t)
 }
 
-func TestRequirePermission_Denied_NilPermissions(t *testing.T) {
-	r := setupTestRouterWithAuth(t, "manage_tasks", nil)
+func TestRequirePermission_NoProjectUUID_InPath(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	gin.SetMode(gin.TestMode)
 
-	token := generateTestToken(t, auth.NewJWTManager("test-secret", time.Hour), nil)
-	req := httptest.NewRequest("GET", "/test", nil)
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	r := gin.New()
+	r.Use(Auth(jwtMgr))
+	r.Use(RequirePermission(mockChecker, "manage_tasks"))
+
+	r.GET("/global-endpoint", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "success"})
+	})
+
+	userUUID := uuid.New()
+	token := generateTestToken(t, jwtMgr, userUUID)
+	req := httptest.NewRequest("GET", "/global-endpoint", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockChecker.AssertNotCalled(t, "Check")
 }
 
-func TestRequirePermission_NoClaimsInContext(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+func TestRequirePermission_InvalidProjectUUID_Format(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	r := setupTestRouterWithChecker(t, mockChecker, "manage_tasks")
 
-	r.Use(RequirePermission("manage_tasks"))
-	r.GET("/test", func(c *gin.Context) {
+	userUUID := uuid.New()
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token := generateTestToken(t, jwtMgr, userUUID)
+
+	req := httptest.NewRequest("GET", "/projects/not-a-uuid/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
+	assert.Equal(t, "invalid_uuid", errResp.Error)
+	mockChecker.AssertNotCalled(t, "Check")
+}
+
+func TestRequirePermission_NoUserUUID_InContext(t *testing.T) {
+	mockChecker := new(mockPermissionChecker)
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(RequirePermission(mockChecker, "manage_tasks"))
+
+	projectUUID := uuid.New()
+	r.GET("/projects/:projectUUID/test", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "success"})
 	})
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/test", nil)
 	w := httptest.NewRecorder()
+
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	var errResp dto.ErrorResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
-	assert.Equal(t, "unauthorized", errResp.Error)
-	assert.Contains(t, errResp.Message, "Claims not found")
-}
-
-func TestRequirePermission_InvalidClaimsType(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	r.Use(func(c *gin.Context) {
-		c.Set(string(contextKeyClaims), "not-a-claims-object")
-		c.Next()
-	})
-	r.Use(RequirePermission("manage_tasks"))
-	r.GET("/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "success"})
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	var errResp dto.ErrorResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
-	assert.Equal(t, "unauthorized", errResp.Error)
-}
-
-func TestClaims_HasPermission_Helper(t *testing.T) {
-	claims := &auth.Claims{
-		Permissions: []string{"view_project", "manage_tasks", "manage_members"},
-	}
-
-	assert.True(t, claims.HasPermission("view_project"))
-	assert.True(t, claims.HasPermission("manage_tasks"))
-	assert.True(t, claims.HasPermission("manage_members"))
-	assert.False(t, claims.HasPermission("manage_roles"))
-	assert.False(t, claims.HasPermission("delete_project"))
-	assert.False(t, claims.HasPermission(""))
-}
-
-func TestClaims_HasPermission_CaseSensitive(t *testing.T) {
-	claims := &auth.Claims{
-		Permissions: []string{"Manage_Tasks"},
-	}
-
-	// 🔹 Проверка чувствительности к регистру
-	assert.False(t, claims.HasPermission("manage_tasks"))
-	assert.True(t, claims.HasPermission("Manage_Tasks"))
-}
-
-func TestClaims_HasPermission_EmptyOrNil(t *testing.T) {
-	claimsEmpty := &auth.Claims{Permissions: []string{}}
-	assert.False(t, claimsEmpty.HasPermission("manage_tasks"))
-
-	claimsNil := &auth.Claims{Permissions: nil}
-	assert.False(t, claimsNil.HasPermission("manage_tasks"))
-}
-
-func TestGetClaims_Helper(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-
-	claims, ok := getClaims(c)
-	assert.Nil(t, claims)
-	assert.False(t, ok)
-
-	expectedClaims := &auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{Subject: uuid.New().String()},
-		Permissions:      []string{"view_project"},
-	}
-	c.Set(string(contextKeyClaims), expectedClaims)
-
-	claims, ok = getClaims(c)
-	assert.True(t, ok)
-	assert.Equal(t, expectedClaims, claims)
+	assert.Equal(t, "context_error", errResp.Error)
+	mockChecker.AssertNotCalled(t, "Check")
 }
 
 func TestAuthAndPermission_Integration_Success(t *testing.T) {
-	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
 	gin.SetMode(gin.TestMode)
 
+	mockChecker := new(mockPermissionChecker)
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
 	r := gin.New()
-	r.Use(Auth(jwtMgr))
-	r.Use(RequirePermission("manage_tasks"))
 
-	r.GET("/protected", func(c *gin.Context) {
+	r.Use(Auth(jwtMgr))
+	r.Use(RequirePermission(mockChecker, "manage_tasks"))
+
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	r.GET("/projects/:projectUUID/protected", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "access_granted"})
 	})
 
-	token := generateTestToken(t, jwtMgr, []string{"view_project", "manage_tasks"})
-	req := httptest.NewRequest("GET", "/protected", nil)
+	token, err := jwtMgr.Generate(userUUID)
+	require.NoError(t, err)
+
+	mockChecker.On("Check", mock.Anything, projectUUID, userUUID, "manage_tasks").
+		Return(nil)
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -232,21 +235,23 @@ func TestAuthAndPermission_Integration_Success(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "access_granted", resp["message"])
+	mockChecker.AssertExpectations(t)
 }
 
 func TestAuthAndPermission_Integration_AuthFails(t *testing.T) {
-	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	mockChecker := new(mockPermissionChecker)
 	gin.SetMode(gin.TestMode)
 
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
 	r := gin.New()
 	r.Use(Auth(jwtMgr))
-	r.Use(RequirePermission("manage_tasks"))
+	r.Use(RequirePermission(mockChecker, "manage_tasks"))
 
-	r.GET("/protected", func(c *gin.Context) {
+	r.GET("/projects/:projectUUID/protected", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "should_not_reach"})
 	})
 
-	req := httptest.NewRequest("GET", "/protected", nil)
+	req := httptest.NewRequest("GET", "/projects/"+uuid.New().String()+"/protected", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token")
 	w := httptest.NewRecorder()
 
@@ -254,22 +259,32 @@ func TestAuthAndPermission_Integration_AuthFails(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Contains(t, w.Body.String(), "malformed_token")
+	mockChecker.AssertNotCalled(t, "Check")
 }
 
 func TestAuthAndPermission_Integration_PermissionFails(t *testing.T) {
-	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	mockChecker := new(mockPermissionChecker)
 	gin.SetMode(gin.TestMode)
 
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
 	r := gin.New()
 	r.Use(Auth(jwtMgr))
-	r.Use(RequirePermission("manage_roles"))
+	r.Use(RequirePermission(mockChecker, "manage_roles"))
 
-	r.GET("/protected", func(c *gin.Context) {
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	r.GET("/projects/:projectUUID/protected", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "should_not_reach"})
 	})
 
-	token := generateTestToken(t, jwtMgr, []string{"view_project", "manage_tasks"})
-	req := httptest.NewRequest("GET", "/protected", nil)
+	token, err := jwtMgr.Generate(userUUID)
+	require.NoError(t, err)
+
+	mockChecker.On("Check", mock.Anything, projectUUID, userUUID, "manage_roles").
+		Return(service.ErrPermissionDenied)
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
@@ -277,4 +292,21 @@ func TestAuthAndPermission_Integration_PermissionFails(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "access_denied")
+	mockChecker.AssertExpectations(t)
+}
+
+func TestRespondError_Helper(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	respondError(c, http.StatusForbidden, "access_denied", "No permission")
+
+	assert.Equal(t, http.StatusForbidden, c.Writer.Status())
+
+	var resp dto.ErrorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "access_denied", resp.Error)
+	assert.Equal(t, "No permission", resp.Message)
 }

@@ -188,6 +188,7 @@ func (s *TaskService) DeleteTask(
 	return nil
 }
 
+/*
 // MoveTask перемещает задачу в другую колонку
 func (s *TaskService) MoveTask(
 	ctx context.Context,
@@ -243,3 +244,5 @@ func (s *TaskService) ArchiveTask(
 	}
 	return nil
 }
+
+*/
