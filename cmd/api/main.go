@@ -112,7 +112,11 @@ func main() {
 
 	permChecker := service.NewPermissionChecker(roleRepo)
 
-	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, roleHandler, statusHandler, jwtManager, permChecker)
+	permRepo := repository.NewPermissionRepository(pool)
+	permService := service.NewPermissionService(permRepo)
+	permHandler := handler.NewPermissionHandler(permService)
+
+	r := router.SetupRouter(userHandler, projectHandler, columnHandler, taskHandler, memberHandler, assigneeHandler, tagHandler, roleHandler, statusHandler, permHandler, jwtManager, permChecker)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

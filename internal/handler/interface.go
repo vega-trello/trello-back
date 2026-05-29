@@ -97,3 +97,7 @@ type JWTManagerInterface interface {
 	Generate(userUUID uuid.UUID) (string, error)
 	Parse(token string) (uuid.UUID, error)
 }
+
+type PermissionServiceInterface interface {
+	GetAllPermissions(ctx context.Context) ([]*model.Permission, error)
+}

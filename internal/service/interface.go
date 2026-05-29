@@ -103,3 +103,10 @@ type AssigneeRepository interface {
 type PermissionChecker interface {
 	Check(ctx context.Context, projectUUID, userUUID uuid.UUID, requiredPerm string) error
 }
+
+type PermissionRepository interface {
+	GetAllPermissions(ctx context.Context) ([]*model.Permission, error)
+	GetPermissionByID(ctx context.Context, permissionID int) (*model.Permission, error)
+	GetPermissionsByRoleID(ctx context.Context, roleID int) ([]*model.Permission, error)
+	GetPermissionByName(ctx context.Context, name string) (*model.Permission, error)
+}

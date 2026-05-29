@@ -22,6 +22,7 @@ func SetupRouter(
 	tagHandler *handler.TagHandler,
 	roleHandler *handler.RoleHandler,
 	statusHandler *handler.StatusHandler,
+	permissionHandler *handler.PermissionHandler,
 	jwtManager *auth.JWTManager,
 	permissionChecker service.PermissionChecker,
 ) *gin.Engine {
@@ -68,6 +69,9 @@ func SetupRouter(
 		protected.GET("/self", userHandler.GetSelfProfile)
 		protected.PATCH("/self", userHandler.UpdateSelfProfile)
 		protected.GET("/user", userHandler.GetOtherUserProfile)
+
+		//Permission endpoints
+		protected.GET("/projects/permissions", permissionHandler.ListPermissions)
 
 		// Project endpoints
 		protected.GET("/projects", projectHandler.ListProjects)
