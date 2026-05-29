@@ -112,7 +112,6 @@ func (m *MockTaskService) ArchiveTask(
 // testAuthMiddleware имитирует middleware.Auth для тестов
 func testAuthMiddleware(userUUID uuid.UUID) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Устанавливаем userUUID в контекст (ключ должен совпадать с middleware.GetUserUUID)
 		c.Set("userUUID", userUUID)
 		c.Next()
 	}
@@ -228,7 +227,12 @@ func TestTaskHandler_CreateTask_InvalidColumnID(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "invalid_column_id")
+
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, "validation_error", resp["error"])
+	assert.Contains(t, resp["message"], "column_id")
+
 	mockSvc.AssertNotCalled(t, "CreateTask")
 }
 
@@ -309,9 +313,12 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 	projectUUID := uuid.New()
 	r := setupTestRouter(t, mockSvc, userUUID)
 
-	reqBody := dto.UpdateTaskRequest{Title: stringPtr("Updated")}
+	reqBody := dto.UpdateTaskRequest{
+		Title:    stringPtr("Updated"),
+		ColumnID: intPtr(2),
+	}
 	mockTask := &model.TaskDB{
-		ID: 42, Title: "Updated", ColumnID: 1,
+		ID: 42, Title: "Updated", ColumnID: 2,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	mockSvc.On("UpdateTask", mock.Anything, projectUUID, 42, userUUID, mock.AnythingOfType("dto.UpdateTaskRequest")).
@@ -323,6 +330,46 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	mockSvc.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_MissingColumnID(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	reqBody := dto.UpdateTaskRequest{
+		Title: stringPtr("Updated Title"),
+	}
+	req := createRequest("PATCH", "/projects/"+projectUUID.String()+"/task?taskID=42", reqBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	mockSvc.AssertNotCalled(t, "UpdateTask")
+
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NotEmpty(t, resp["error"], "Expected error field in response")
+}
+
+func TestTaskHandler_UpdateTask_InvalidColumnID(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	reqBody := dto.UpdateTaskRequest{
+		Title:    stringPtr("Updated"),
+		ColumnID: intPtr(-10),
+	}
+	req := createRequest("PATCH", "/projects/"+projectUUID.String()+"/task?taskID=42", reqBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "column_id")
+	mockSvc.AssertNotCalled(t, "UpdateTask")
 }
 
 func TestTaskHandler_UpdateTask_MissingTaskID(t *testing.T) {
