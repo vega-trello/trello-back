@@ -263,8 +263,15 @@ func TestHandler_ExchangeSSOToken_Success(t *testing.T) {
 		loginSSOFunc: func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error) {
 			assert.Equal(t, "vega", provider)
 			assert.Equal(t, "530", extID)
-			assert.Contains(t, username, "petrov")
+
+			assert.Regexp(t, `^[a-z]+_[a-z]+_\d{1,3}$`, username,
+				"username should match format: {adjective}_{noun}_{number}")
+
+			assert.GreaterOrEqual(t, len(username), 1, "username should be at least 1 character")
+			assert.LessOrEqual(t, len(username), 32, "username should not exceed 32 characters")
+
 			assert.JSONEq(t, `{"fir":"Иван","sir":"Петров","mid":"","grn":"КМБО-02-22","gri":"42"}`, string(metadata))
+
 			return &model.User{UUID: testUUID, Username: username, UserType: "sso"}, nil
 		},
 	}
@@ -283,7 +290,6 @@ func TestHandler_ExchangeSSOToken_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NotEmpty(t, resp.Token)
 }
-
 func TestHandler_ExchangeSSOToken_InvalidVegaResponse(t *testing.T) {
 	vegaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

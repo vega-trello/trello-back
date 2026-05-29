@@ -1,9 +1,30 @@
 package utils
 
 import (
+	"math/rand"
 	"regexp"
+	"strconv"
 	"strings"
 )
+
+var adjectives = []string{
+	"swift", "bright", "silent", "bold", "calm",
+	"fierce", "gentle", "wild", "brave", "clever",
+	"dark", "eager", "fancy", "glad", "jolly",
+}
+
+var nouns = []string{
+	"fox", "hawk", "wolf", "bear", "lynx",
+	"crow", "deer", "otter", "eagle", "tiger",
+	"shark", "raven", "panda", "cobra", "falcon",
+}
+
+func GenerateRandomUsername() string {
+	adj := adjectives[rand.Intn(len(adjectives))]
+	noun := nouns[rand.Intn(len(nouns))]
+	num := rand.Intn(1000)
+	return adj + "_" + noun + "_" + strconv.Itoa(num)
+}
 
 func GenerateSSOUsername(fir, sir, uai string) string {
 	base := strings.ToLower(strings.TrimSpace(sir))

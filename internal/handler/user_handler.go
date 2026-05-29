@@ -95,7 +95,7 @@ func (h *UserHandler) ExchangeSSOToken(c *gin.Context) {
 		return
 	}
 
-	username := utils.GenerateSSOUsername(profile.FIR, profile.SIR, profile.UAI)
+	username := utils.GenerateRandomUsername()
 
 	metadata, _ := json.Marshal(map[string]interface{}{
 		"fir": profile.FIR,
