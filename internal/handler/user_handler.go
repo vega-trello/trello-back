@@ -137,6 +137,7 @@ func (h *UserHandler) GetSelfProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromSelfUserModel(selfUser))
 }
 
+// UpdateSelfProfile PATCH /self
 func (h *UserHandler) UpdateSelfProfile(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -150,7 +151,17 @@ func (h *UserHandler) UpdateSelfProfile(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.userService.UpdateSelfProfile(c.Request.Context(), userUUID, req.OldPassword, req.Username, req.Password)
+	if err := req.Validate(); err != nil {
+		respondError(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+
+	updated, err := h.userService.UpdateSelfProfile(
+		c.Request.Context(),
+		userUUID,
+		req.Username, // *string: nil если не меняем ник
+		req.Password, // *string: nil если не меняем пароль
+	)
 	if err != nil {
 		handleServiceError(c, err)
 		return
@@ -159,17 +170,17 @@ func (h *UserHandler) UpdateSelfProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromSelfUserModel(updated))
 }
 
+// GetOtherUserProfile GET /user?userUUID={uuid}
 func (h *UserHandler) GetOtherUserProfile(c *gin.Context) {
-
 	targetUserUUIDStr := c.Query("userUUID")
 	if targetUserUUIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_user_uuid", "userUUID query parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "userUUID query parameter is required")
 		return
 	}
 
 	targetUserUUID, err := uuid.Parse(targetUserUUIDStr)
 	if err != nil {
-		respondError(c, http.StatusBadRequest, "invalid_user_uuid", "Invalid user UUID format")
+		respondError(c, http.StatusBadRequest, "invalid_param", "userUUID must be a valid UUID")
 		return
 	}
 
@@ -194,7 +205,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 }
 
-// parseVegaToken отправляет запрос
 func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaProfile, error) {
 	reqURL := fmt.Sprintf("%s?op=parsetoken&token=%s", h.vegaBaseURL, token)
 
@@ -225,7 +235,6 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 	return &profile, nil
 }
 
-// VegaProfile структура ответа
 type VegaProfile struct {
 	UAI string `json:"uai"`
 	FIR string `json:"fir"`

@@ -53,11 +53,9 @@ func TestUserRepository_RegisterPasswordUser_DuplicateUsername(t *testing.T) {
 	username := "duplicate"
 	passwordHash := hashPassword(t, "pass1")
 
-	// Первая регистрация — успешно
 	_, err := repo.RegisterPasswordUser(ctx, username, passwordHash)
 	require.NoError(t, err)
 
-	// Вторая регистрация с тем же username — ошибка
 	_, err = repo.RegisterPasswordUser(ctx, username, hashPassword(t, "pass2"))
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
 }
@@ -286,10 +284,9 @@ func TestUserRepository_UpdateSelfUser_Manual_ChangeUsername(t *testing.T) {
 
 	truncateUsers(t, pool)
 
-	password := "oldpass123"
-	user, _ := repo.RegisterPasswordUser(ctx, "oldname", hashPassword(t, password))
+	user, _ := repo.RegisterPasswordUser(ctx, "oldname", hashPassword(t, "pass123"))
 
-	updated, err := repo.UpdateSelfUser(ctx, user.UUID, password, "newname", "")
+	updated, err := repo.UpdateSelfUser(ctx, user.UUID, stringPtr("newname"), nil)
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -308,7 +305,10 @@ func TestUserRepository_UpdateSelfUser_Manual_ChangePassword(t *testing.T) {
 	newPass := "newpass123"
 	user, _ := repo.RegisterPasswordUser(ctx, "changepass", hashPassword(t, oldPass))
 
-	_, err := repo.UpdateSelfUser(ctx, user.UUID, oldPass, "", newPass)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	require.NoError(t, err)
+
+	_, err = repo.UpdateSelfUser(ctx, user.UUID, nil, stringPtr(string(newHash)))
 	require.NoError(t, err)
 
 	err = repo.VerifyPassword(ctx, user.UUID, newPass)
@@ -320,17 +320,18 @@ func TestUserRepository_UpdateSelfUser_Manual_ChangePassword(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestUserRepository_UpdateSelfUser_Manual_WrongOldPassword(t *testing.T) {
+func TestUserRepository_UpdateSelfUser_Manual_NoFields(t *testing.T) {
 	pool := setupTestPool(t)
 	repo := NewUserRepository(pool)
 	ctx := context.Background()
 
 	truncateUsers(t, pool)
 
-	user, _ := repo.RegisterPasswordUser(ctx, "test", hashPassword(t, "realpass"))
+	user, _ := repo.RegisterPasswordUser(ctx, "test", hashPassword(t, "pass"))
 
-	_, err := repo.UpdateSelfUser(ctx, user.UUID, "wrongpass", "newname", "")
-	assert.ErrorIs(t, err, ErrInvalidCredentials)
+	_, err := repo.UpdateSelfUser(ctx, user.UUID, nil, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no fields to update")
 }
 
 func TestUserRepository_UpdateSelfUser_SSO_ChangeUsername(t *testing.T) {
@@ -342,7 +343,7 @@ func TestUserRepository_UpdateSelfUser_SSO_ChangeUsername(t *testing.T) {
 
 	user, _ := repo.FindOrCreateUserBySSO(ctx, "vega", "888", "ssoold", json.RawMessage(`{}`))
 
-	updated, err := repo.UpdateSelfUser(ctx, user.UUID, "", "ssonew", "")
+	updated, err := repo.UpdateSelfUser(ctx, user.UUID, stringPtr("ssonew"), nil)
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -359,7 +360,7 @@ func TestUserRepository_UpdateSelfUser_SSO_ChangePassword_Forbidden(t *testing.T
 
 	user, _ := repo.FindOrCreateUserBySSO(ctx, "vega", "999", "ssonopass", json.RawMessage(`{}`))
 
-	_, err := repo.UpdateSelfUser(ctx, user.UUID, "", "", "newpass")
+	_, err := repo.UpdateSelfUser(ctx, user.UUID, nil, stringPtr("hashed_password"))
 	assert.ErrorIs(t, err, ErrSSOUserPasswordChange)
 }
 
@@ -370,11 +371,14 @@ func TestUserRepository_UpdateSelfUser_Both_Success(t *testing.T) {
 
 	truncateUsers(t, pool)
 
-	oldPass := "oldpass"
 	newPass := "newpass"
-	user, _ := repo.RegisterPasswordUser(ctx, "oldname", hashPassword(t, oldPass))
+	user, _ := repo.RegisterPasswordUser(ctx, "oldname", hashPassword(t, "oldpass"))
 
-	updated, err := repo.UpdateSelfUser(ctx, user.UUID, oldPass, "newname", newPass)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	require.NoError(t, err)
+
+	// Меняем и ник, и пароль
+	updated, err := repo.UpdateSelfUser(ctx, user.UUID, stringPtr("newname"), stringPtr(string(newHash)))
 	require.NoError(t, err)
 
 	assert.Equal(t, "newname", updated.Username)
@@ -395,7 +399,7 @@ func TestUserRepository_UpdateSelfUser_DuplicateUsername(t *testing.T) {
 	_, _ = repo.RegisterPasswordUser(ctx, "user1", hashPassword(t, "pass1"))
 	user2, _ := repo.RegisterPasswordUser(ctx, "user2", hashPassword(t, "pass2"))
 
-	_, err := repo.UpdateSelfUser(ctx, user2.UUID, "pass2", "user1", "")
+	_, err := repo.UpdateSelfUser(ctx, user2.UUID, stringPtr("user1"), nil)
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
 }
 
@@ -448,7 +452,6 @@ func TestUserRepository_Logout_Success(t *testing.T) {
 
 	user, _ := repo.RegisterPasswordUser(ctx, "logout_user", hashPassword(t, "pass"))
 
-	// Stateless JWT: logout - заглушка, всегда успешен
 	err := repo.Logout(ctx, user.UUID)
 	assert.NoError(t, err)
 }

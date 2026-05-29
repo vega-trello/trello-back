@@ -1,4 +1,3 @@
-// internal/handler/tag_handler.go
 package handler
 
 import (

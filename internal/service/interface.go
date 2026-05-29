@@ -22,7 +22,7 @@ type UserRepository interface {
 
 	// user endpoints
 	GetSelfUser(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	UpdateSelfUser(ctx context.Context, userUUID uuid.UUID, oldPassword string, newUsername string, newPassword string) (*model.SelfUser, error)
+	UpdateSelfUser(ctx context.Context, userUUID uuid.UUID, newUsername *string, newPasswordHash *string) (*model.SelfUser, error)
 }
 
 type RoleRepository interface {

@@ -66,7 +66,7 @@ func (r *UserRepository) RegisterPasswordUser(
 	}, nil
 }
 
-// FindUserByUsername находит manual-пользователя и возвращает хеш пароля для проверки-
+// FindUserByUsername находит manual-пользователя и возвращает хеш пароля для проверки
 func (r *UserRepository) FindUserByUsername(
 	ctx context.Context,
 	username string,
@@ -182,7 +182,7 @@ func (r *UserRepository) FindUserByUUID(
 	return &user, nil
 }
 
-// GetSelfUser возвращает расширенную информацию о пользователе для эндпоинта GET /user
+// GetSelfUser возвращает расширенную информацию о пользователе для эндпоинта GET /self
 func (r *UserRepository) GetSelfUser(
 	ctx context.Context,
 	userUUID uuid.UUID,
@@ -207,28 +207,27 @@ func (r *UserRepository) GetSelfUser(
 	return &user, nil
 }
 
-// UpdateSelfUser обновляет профиль текущего пользователя для эндпоинта PATCH /user
+// UpdateSelfUser обновляет профиль текущего пользователя для эндпоинта PATCH /self
 func (r *UserRepository) UpdateSelfUser(
 	ctx context.Context,
 	userUUID uuid.UUID,
-	oldPassword string,
-	newUsername string,
-	newPassword string,
+	newUsername *string,
+	newPasswordHash *string,
 ) (*model.SelfUser, error) {
+	if newUsername == nil && newPasswordHash == nil {
+		return nil, errors.New("repository: no fields to update")
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("repository: begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	var userType, currentUsername string
-	var currentHash []byte
+	var userType string
 	err = tx.QueryRow(ctx, `
-		SELECT u.user_type, u.username, m.password_hash
-		FROM base_user u
-		LEFT JOIN manual_user m ON u.uuid = m.user_uuid
-		WHERE u.uuid = $1
-	`, userUUID).Scan(&userType, &currentUsername, &currentHash)
+		SELECT user_type FROM base_user WHERE uuid = $1
+	`, userUUID).Scan(&userType)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -237,21 +236,29 @@ func (r *UserRepository) UpdateSelfUser(
 		return nil, fmt.Errorf("repository: find user: %w", err)
 	}
 
-	if userType == "manual" {
-		if err := bcrypt.CompareHashAndPassword(currentHash, []byte(oldPassword)); err != nil {
-			return nil, ErrInvalidCredentials
-		}
-	} else {
-		if newPassword != "" {
-			return nil, ErrSSOUserPasswordChange
-		}
+	// SSO-пользователи не могут менять пароль
+	if userType != "manual" && newPasswordHash != nil {
+		return nil, ErrSSOUserPasswordChange
 	}
 
-	if newUsername != "" && newUsername != currentUsername {
+	updates := make(map[string]interface{})
+	if newUsername != nil {
+		updates["username"] = *newUsername
+	}
+	if newPasswordHash != nil && userType == "manual" {
+		updates["password_hash"] = *newPasswordHash
+	}
+
+	if len(updates) == 0 {
+		return nil, errors.New("repository: no valid fields to update")
+	}
+
+	if newUsername != nil {
 		_, err = tx.Exec(ctx, `
-			UPDATE base_user SET username = $1, updated_at = NOW()
+			UPDATE base_user 
+			SET username = $1, updated_at = NOW()
 			WHERE uuid = $2
-		`, newUsername, userUUID)
+		`, *newUsername, userUUID)
 		if err != nil {
 			if isUniqueViolation(err, "base_user_username_key") {
 				return nil, ErrUserAlreadyExists
@@ -260,17 +267,25 @@ func (r *UserRepository) UpdateSelfUser(
 		}
 	}
 
-	if newPassword != "" && userType == "manual" {
-		newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-		if err != nil {
-			return nil, fmt.Errorf("repository: hash password: %w", err)
-		}
+	if newPasswordHash != nil && userType == "manual" {
 		_, err = tx.Exec(ctx, `
-			UPDATE manual_user SET password_hash = $1
+			UPDATE manual_user 
+			SET password_hash = $1
 			WHERE user_uuid = $2
-		`, newHash, userUUID)
+		`, *newPasswordHash, userUUID)
 		if err != nil {
 			return nil, fmt.Errorf("repository: update password: %w", err)
+		}
+	}
+
+	if newUsername != nil || (newPasswordHash != nil && userType == "manual") {
+		_, err = tx.Exec(ctx, `
+			UPDATE base_user 
+			SET updated_at = NOW()
+			WHERE uuid = $1
+		`, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("repository: update updated_at: %w", err)
 		}
 	}
 
@@ -278,7 +293,6 @@ func (r *UserRepository) UpdateSelfUser(
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
 
-	// 5. Возвращаем обновлённый профиль
 	return r.GetSelfUser(ctx, userUUID)
 }
 

@@ -50,7 +50,6 @@ func (s *UserService) Register(ctx context.Context, username string, password st
 	return user, nil
 }
 
-// Login аутентифицирует пользователя по логину и паролю
 func (s *UserService) Login(ctx context.Context, username string, password string) (*model.User, error) {
 	user, storedHash, err := s.repo.FindUserByUsername(ctx, username)
 	if err != nil {
@@ -64,7 +63,6 @@ func (s *UserService) Login(ctx context.Context, username string, password strin
 	return user, nil
 }
 
-// LoginBySSO аутентифицирует пользователя через корпоративный SSO
 func (s *UserService) LoginBySSO(
 	ctx context.Context,
 	provider string,
@@ -117,15 +115,27 @@ func (s *UserService) GetSelfProfile(ctx context.Context, userUUID uuid.UUID) (*
 func (s *UserService) UpdateSelfProfile(
 	ctx context.Context,
 	userUUID uuid.UUID,
-	oldPassword string,
-	newUsername string,
-	newPassword string,
+	newUsername *string,
+	newPassword *string,
 ) (*model.SelfUser, error) {
-	if newPassword != "" && len(newPassword) < 8 {
-		return nil, ErrPasswordTooShort
+	if newUsername == nil && newPassword == nil {
+		return nil, fmt.Errorf("service: at least one field (username or password) must be provided")
 	}
 
-	updated, err := s.repo.UpdateSelfUser(ctx, userUUID, oldPassword, newUsername, newPassword)
+	var hashedPassword *string
+	if newPassword != nil {
+		if len(*newPassword) < 8 {
+			return nil, ErrPasswordTooShort
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(*newPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("service: hash password: %w", err)
+		}
+		hashStr := string(hash)
+		hashedPassword = &hashStr
+	}
+
+	updated, err := s.repo.UpdateSelfUser(ctx, userUUID, newUsername, hashedPassword)
 	if err != nil {
 		if errors.Is(err, repository.ErrInvalidCredentials) {
 			return nil, ErrInvalidCredentials
@@ -141,6 +151,7 @@ func (s *UserService) UpdateSelfProfile(
 		}
 		return nil, fmt.Errorf("service: update profile: %w", err)
 	}
+
 	return updated, nil
 }
 

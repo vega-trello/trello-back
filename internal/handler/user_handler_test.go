@@ -30,7 +30,7 @@ type mockUserService struct {
 	loginFunc               func(ctx context.Context, username, password string) (*model.User, error)
 	loginSSOFunc            func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error)
 	getSelfProfileFunc      func(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	updateSelfProfileFunc   func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error)
+	updateSelfProfileFunc   func(ctx context.Context, userUUID uuid.UUID, newUsername *string, newPassword *string) (*model.SelfUser, error)
 	getOtherUserProfileFunc func(ctx context.Context, targetUserUUID uuid.UUID) (*model.User, error)
 	logoutFunc              func(ctx context.Context, userUUID uuid.UUID) error
 }
@@ -59,9 +59,10 @@ func (m *mockUserService) GetSelfProfile(ctx context.Context, userUUID uuid.UUID
 	}
 	return nil, nil
 }
-func (m *mockUserService) UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+
+func (m *mockUserService) UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, newUsername *string, newPassword *string) (*model.SelfUser, error) {
 	if m.updateSelfProfileFunc != nil {
-		return m.updateSelfProfileFunc(ctx, userUUID, oldPass, newName, newPass)
+		return m.updateSelfProfileFunc(ctx, userUUID, newUsername, newPassword)
 	}
 	return nil, nil
 }
@@ -141,7 +142,6 @@ func setupProtectedTestRouter(t *testing.T, svc *mockUserService, jwtSecret stri
 
 	protected.GET("/self", h.GetSelfProfile)
 	protected.PATCH("/self", h.UpdateSelfProfile)
-
 	protected.GET("/user", h.GetOtherUserProfile)
 
 	return r, jwtMgr
@@ -420,7 +420,7 @@ func TestHandler_GetOtherUserProfile_MissingUserUUID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var errResp dto.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
-	assert.Equal(t, "missing_user_uuid", errResp.Error)
+	assert.Equal(t, "missing_param", errResp.Error)
 }
 
 func TestHandler_GetOtherUserProfile_InvalidUserUUID(t *testing.T) {
@@ -437,7 +437,8 @@ func TestHandler_GetOtherUserProfile_InvalidUserUUID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var errResp dto.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
-	assert.Equal(t, "invalid_user_uuid", errResp.Error)
+	// 🔹 Унифицированный код ошибки
+	assert.Equal(t, "invalid_param", errResp.Error)
 }
 
 func TestHandler_GetOtherUserProfile_NotFound(t *testing.T) {
@@ -459,12 +460,19 @@ func TestHandler_GetOtherUserProfile_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestHandler_UpdateSelfProfile_Success(t *testing.T) {
+func TestHandler_UpdateSelfProfile_Success_ChangeUsernameOnly(t *testing.T) {
 	testUUID := uuid.New()
+	newUsername := "newname"
+
 	svc := &mockUserService{
-		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, username *string, password *string) (*model.SelfUser, error) {
+			assert.Equal(t, testUUID, userUUID)
+			assert.NotNil(t, username)
+			assert.Equal(t, newUsername, *username)
+			assert.Nil(t, password)
+
 			return &model.SelfUser{
-				User:      model.User{UUID: userUUID, Username: newName, UserType: "manual"},
+				User:      model.User{UUID: userUUID, Username: newUsername, UserType: "manual"},
 				CreatedAt: time.Now(), UpdatedAt: time.Now(),
 			}, nil
 		},
@@ -472,8 +480,8 @@ func TestHandler_UpdateSelfProfile_Success(t *testing.T) {
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"old_password":"oldpass","username":"newname","password":""}`)
-	req := httptest.NewRequest("PATCH", "/self", body) // 🔹 Путь изменён: /self
+	body := bytes.NewBufferString(`{"username":"newname"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -485,17 +493,161 @@ func TestHandler_UpdateSelfProfile_Success(t *testing.T) {
 	assert.Equal(t, "newname", resp.Username)
 }
 
+func TestHandler_UpdateSelfProfile_Success_ChangePasswordOnly(t *testing.T) {
+	testUUID := uuid.New()
+
+	svc := &mockUserService{
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, username *string, password *string) (*model.SelfUser, error) {
+			assert.Equal(t, testUUID, userUUID)
+			assert.Nil(t, username)
+			assert.NotNil(t, password)
+			assert.NotEmpty(t, *password)
+
+			return &model.SelfUser{
+				User:      model.User{UUID: userUUID, Username: "user", UserType: "manual"},
+				CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			}, nil
+		},
+	}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"password":"NewPass123"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_UpdateSelfProfile_Success_ChangeBoth(t *testing.T) {
+	testUUID := uuid.New()
+	newUsername := "newname"
+
+	svc := &mockUserService{
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, username *string, password *string) (*model.SelfUser, error) {
+			assert.Equal(t, testUUID, userUUID)
+			assert.NotNil(t, username)
+			assert.Equal(t, newUsername, *username)
+			assert.NotNil(t, password)
+
+			return &model.SelfUser{
+				User:      model.User{UUID: userUUID, Username: newUsername, UserType: "manual"},
+				CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			}, nil
+		},
+	}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"username":"newname","password":"NewPass123"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp dto.SelfUserResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, "newname", resp.Username)
+}
+
+func TestHandler_UpdateSelfProfile_NoFieldsProvided(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "validation_error", errResp.Error)
+	assert.Contains(t, errResp.Message, "at least one field")
+}
+
+func TestHandler_UpdateSelfProfile_InvalidUsername(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"username":"` + string(make([]byte, 33)) + `"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "invalid_request", errResp.Error)
+}
+
+func TestHandler_UpdateSelfProfile_PasswordTooShort(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	// 🔹 Короткий пароль
+	body := bytes.NewBufferString(`{"password":"123"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "invalid_request", errResp.Error)
+}
+
+func TestHandler_UpdateSelfProfile_UsernameConflict(t *testing.T) {
+	testUUID := uuid.New()
+	svc := &mockUserService{
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, username *string, password *string) (*model.SelfUser, error) {
+			return nil, service.ErrUserAlreadyExists
+		},
+	}
+	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
+	token := generateTestToken(t, testUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"username":"taken"}`)
+	req := httptest.NewRequest("PATCH", "/self", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var errResp dto.ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	assert.Equal(t, "username_taken", errResp.Error)
+}
+
 func TestHandler_UpdateSelfProfile_SSO_CannotChangePassword(t *testing.T) {
 	testUUID := uuid.New()
 	svc := &mockUserService{
-		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error) {
+		updateSelfProfileFunc: func(ctx context.Context, userUUID uuid.UUID, username *string, password *string) (*model.SelfUser, error) {
 			return nil, service.ErrSSOUserPasswordChange
 		},
 	}
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"old_password":"dummy","username":"","password":"NewPass123"}`)
+	body := bytes.NewBufferString(`{"password":"NewPass123"}`)
 	req := httptest.NewRequest("PATCH", "/self", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)

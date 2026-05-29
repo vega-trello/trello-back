@@ -19,7 +19,7 @@ type UserServiceInterface interface {
 	Login(ctx context.Context, username, password string) (*model.User, error)
 	LoginBySSO(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error)
 	GetSelfProfile(ctx context.Context, userUUID uuid.UUID) (*model.SelfUser, error)
-	UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, oldPass, newName, newPass string) (*model.SelfUser, error)
+	UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, newUsername *string, newPassword *string) (*model.SelfUser, error)
 	GetOtherUserProfile(ctx context.Context, targetUserUUID uuid.UUID) (*model.User, error)
 	Logout(ctx context.Context, userUUID uuid.UUID) error
 }

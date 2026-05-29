@@ -65,26 +65,32 @@ func (r *LogoutRequest) Validate() error {
 	return nil
 }
 
-// UpdateUserRequest - PATCH /user
+// UpdateUserRequest - PATCH /self
+// Все поля опциональны: обновляется только то, что передано (не-nil)
 type UpdateUserRequest struct {
-	OldPassword string `json:"old_password" binding:"required"`
-	Username    string `json:"username" binding:"omitempty,min=1,max=32"`
-	Password    string `json:"password" binding:"omitempty,min=8"`
+	Username *string `json:"username,omitempty" binding:"omitempty,min=1,max=32"`
+	Password *string `json:"password,omitempty" binding:"omitempty,min=8"`
 }
 
+// Validate проверяет корректность запроса
 func (r *UpdateUserRequest) Validate() error {
-	if r.OldPassword == "" {
-		return &utils.ValidationError{Field: "old_password", Message: "old_password is required"}
+	// Если ничего не передано — ошибка
+	if r.Username == nil && r.Password == nil {
+		return &utils.ValidationError{
+			Field:   "request",
+			Message: "at least one field (username or password) must be provided",
+		}
 	}
 
-	if r.Username != "" {
-		if len(r.Username) < 1 || len(r.Username) > 32 {
+	// Если ник передан — валидируем его
+	if r.Username != nil {
+		if *r.Username == "" || len(*r.Username) > 32 {
 			return &utils.ValidationError{
 				Field:   "username",
 				Message: "username must be between 1 and 32 characters",
 			}
 		}
-		if !utils.IsValidUsername(r.Username) {
+		if !utils.IsValidUsername(*r.Username) {
 			return &utils.ValidationError{
 				Field:   "username",
 				Message: "username can contain only lowercase letters, numbers, underscore and dash",
@@ -92,11 +98,15 @@ func (r *UpdateUserRequest) Validate() error {
 		}
 	}
 
-	if r.Password != "" && len(r.Password) < 8 {
-		return &utils.ValidationError{
-			Field:   "password",
-			Message: "password must be at least 8 characters",
+	// Если пароль передан — валидируем его
+	if r.Password != nil {
+		if len(*r.Password) < 8 {
+			return &utils.ValidationError{
+				Field:   "password",
+				Message: "password must be at least 8 characters",
+			}
 		}
 	}
+
 	return nil
 }
