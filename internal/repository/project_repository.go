@@ -230,3 +230,22 @@ func (r *ProjectRepository) IsOwner(
 	}
 	return exists, nil
 }
+
+// RemoveMember удаляет пользователя из проекта (выход из проекта)
+func (r *ProjectRepository) RemoveMember(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	userUUID uuid.UUID,
+) error {
+	result, err := r.db.Exec(ctx, `
+		DELETE FROM project_member
+		WHERE project_uuid = $1 AND user_uuid = $2
+	`, projectUUID, userUUID)
+	if err != nil {
+		return fmt.Errorf("repository: remove member: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrAccessDenied // пользователь не был участником
+	}
+	return nil
+}

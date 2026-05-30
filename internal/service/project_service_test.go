@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -63,6 +64,11 @@ func (m *MockProjectRepository) IsMember(ctx context.Context, projectUUID uuid.U
 func (m *MockProjectRepository) IsOwner(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (bool, error) {
 	args := m.Called(ctx, projectUUID, userUUID)
 	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockProjectRepository) RemoveMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) error {
+	args := m.Called(ctx, projectUUID, userUUID)
+	return args.Error(0)
 }
 
 func strPtr(s string) *string {
@@ -329,7 +335,7 @@ func TestProjectService_UpdateProject_AccessDenied(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-func TestProjectService_DeleteProject_Success(t *testing.T) {
+func TestProjectService_DeleteProject_OwnerDeletesProject(t *testing.T) {
 	mockRepo := new(MockProjectRepository)
 	svc := NewProjectService(mockRepo)
 
@@ -337,7 +343,8 @@ func TestProjectService_DeleteProject_Success(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	// Проверка прав владельца + удаление
+	// Пользователь — владелец проекта
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
 	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(true, nil)
 	mockRepo.On("Delete", ctx, projectUUID).Return(nil)
 
@@ -345,9 +352,11 @@ func TestProjectService_DeleteProject_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
+
+	mockRepo.AssertNotCalled(t, "RemoveMember")
 }
 
-func TestProjectService_DeleteProject_NotOwner(t *testing.T) {
+func TestProjectService_DeleteProject_MemberLeavesProject(t *testing.T) {
 	mockRepo := new(MockProjectRepository)
 	svc := NewProjectService(mockRepo)
 
@@ -355,15 +364,19 @@ func TestProjectService_DeleteProject_NotOwner(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
 	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(false, nil)
+	mockRepo.On("RemoveMember", ctx, projectUUID, userUUID).Return(nil)
 
 	err := svc.DeleteProject(ctx, projectUUID, userUUID)
 
-	assert.ErrorIs(t, err, ErrAccessDenied)
+	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
+
+	mockRepo.AssertNotCalled(t, "Delete")
 }
 
-func TestProjectService_DeleteProject_NotFound(t *testing.T) {
+func TestProjectService_DeleteProject_NoAccess(t *testing.T) {
 	mockRepo := new(MockProjectRepository)
 	svc := NewProjectService(mockRepo)
 
@@ -371,11 +384,128 @@ func TestProjectService_DeleteProject_NotFound(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(true, nil)
-	mockRepo.On("Delete", ctx, projectUUID).Return(ErrProjectNotFound)
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(false, nil)
 
 	err := svc.DeleteProject(ctx, projectUUID, userUUID)
 
 	assert.ErrorIs(t, err, ErrProjectNotFound)
+	mockRepo.AssertExpectations(t)
+
+	mockRepo.AssertNotCalled(t, "IsOwner")
+	mockRepo.AssertNotCalled(t, "Delete")
+	mockRepo.AssertNotCalled(t, "RemoveMember")
+}
+
+func TestProjectService_DeleteProject_CheckMemberError(t *testing.T) {
+	mockRepo := new(MockProjectRepository)
+	svc := NewProjectService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	dbErr := errors.New("database connection failed")
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(false, dbErr)
+
+	err := svc.DeleteProject(ctx, projectUUID, userUUID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "service: check member")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "IsOwner")
+	mockRepo.AssertNotCalled(t, "Delete")
+	mockRepo.AssertNotCalled(t, "RemoveMember")
+}
+
+func TestProjectService_DeleteProject_CheckOwnerError(t *testing.T) {
+	mockRepo := new(MockProjectRepository)
+	svc := NewProjectService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
+
+	dbErr := errors.New("database error")
+	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(false, dbErr)
+
+	err := svc.DeleteProject(ctx, projectUUID, userUUID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "service: check owner")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Delete")
+	mockRepo.AssertNotCalled(t, "RemoveMember")
+}
+
+func TestProjectService_DeleteProject_DeleteError(t *testing.T) {
+	mockRepo := new(MockProjectRepository)
+	svc := NewProjectService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
+	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(true, nil)
+
+	deleteErr := ErrProjectNotFound
+	mockRepo.On("Delete", ctx, projectUUID).Return(deleteErr)
+
+	err := svc.DeleteProject(ctx, projectUUID, userUUID)
+
+	assert.ErrorIs(t, err, deleteErr)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "RemoveMember")
+}
+
+func TestProjectService_DeleteProject_RemoveMemberError(t *testing.T) {
+	mockRepo := new(MockProjectRepository)
+	svc := NewProjectService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
+	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(false, nil)
+
+	removeErr := errors.New("failed to remove member")
+	mockRepo.On("RemoveMember", ctx, projectUUID, userUUID).Return(removeErr)
+
+	err := svc.DeleteProject(ctx, projectUUID, userUUID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove member")
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Delete")
+}
+
+func TestProjectService_FullWorkflow_Owner(t *testing.T) {
+	mockRepo := new(MockProjectRepository)
+	svc := NewProjectService(mockRepo)
+	ctx := context.Background()
+
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+
+	mockRepo.On("Create", ctx, userUUID, mock.Anything).Return(&model.Project{UUID: projectUUID, Title: "Test"}, nil)
+	project, err := svc.CreateProject(ctx, userUUID, "Test", nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "Test", project.Title)
+
+	mockRepo.On("IsMember", ctx, projectUUID, userUUID).Return(true, nil)
+	mockRepo.On("Update", ctx, projectUUID, userUUID, strPtr("Updated"), (*string)(nil)).
+		Return(&model.Project{UUID: projectUUID, Title: "Updated"}, nil)
+	updated, err := svc.UpdateProject(ctx, projectUUID, userUUID, strPtr("Updated"), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "Updated", updated.Title)
+
+	mockRepo.On("IsOwner", ctx, projectUUID, userUUID).Return(true, nil)
+	mockRepo.On("Delete", ctx, projectUUID).Return(nil)
+	err = svc.DeleteProject(ctx, projectUUID, userUUID)
+	assert.NoError(t, err)
+
 	mockRepo.AssertExpectations(t)
 }

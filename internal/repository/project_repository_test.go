@@ -262,3 +262,112 @@ func TestProjectRepository_IsOwner_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, isOwner)
 }
+
+func TestProjectRepository_RemoveMember_Success(t *testing.T) {
+	repo, pool, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "RemoveTest"})
+
+	secondUser := uuid.New()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, 'second_user', 'manual', NOW(), NOW())
+		ON CONFLICT (uuid) DO NOTHING
+	`, secondUser)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO project_member (project_uuid, user_uuid, role_id, joined_at)
+		VALUES ($1, $2, 3, NOW())
+	`, project.UUID, secondUser)
+	require.NoError(t, err)
+
+	isMember, err := repo.IsMember(ctx, project.UUID, secondUser)
+	require.NoError(t, err)
+	assert.True(t, isMember)
+
+	err = repo.RemoveMember(ctx, project.UUID, secondUser)
+	assert.NoError(t, err)
+
+	isMember, err = repo.IsMember(ctx, project.UUID, secondUser)
+	require.NoError(t, err)
+	assert.False(t, isMember)
+
+	_, err = repo.FindByID(ctx, project.UUID)
+	assert.NoError(t, err)
+}
+
+func TestProjectRepository_RemoveMember_Owner(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "RemoveOwnerTest"})
+
+	isOwner, err := repo.IsOwner(ctx, project.UUID, creatorUUID)
+	require.NoError(t, err)
+	assert.True(t, isOwner)
+
+	err = repo.RemoveMember(ctx, project.UUID, creatorUUID)
+	assert.NoError(t, err)
+
+	isMember, err := repo.IsMember(ctx, project.UUID, creatorUUID)
+	require.NoError(t, err)
+	assert.False(t, isMember)
+
+	isOwner, err = repo.IsOwner(ctx, project.UUID, creatorUUID)
+	require.NoError(t, err)
+	assert.False(t, isOwner)
+
+	_, err = repo.FindByID(ctx, project.UUID)
+	assert.NoError(t, err)
+}
+
+func TestProjectRepository_RemoveMember_NotMember(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "NotMemberTest"})
+
+	otherUser := uuid.New()
+	err := repo.RemoveMember(ctx, project.UUID, otherUser)
+
+	assert.ErrorIs(t, err, ErrAccessDenied)
+}
+
+func TestProjectRepository_RemoveMember_ProjectNotFound(t *testing.T) {
+	repo, _, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	randomUUID := uuid.New()
+	err := repo.RemoveMember(ctx, randomUUID, creatorUUID)
+
+	assert.Error(t, err)
+}
+
+func TestProjectRepository_DeleteProject_FullWorkflow(t *testing.T) {
+	repo, pool, creatorUUID := setupProjectRepo(t)
+	ctx := context.Background()
+
+	project, _ := repo.Create(ctx, creatorUUID, dto.CreateProjectRequest{Title: "WorkflowTest"})
+
+	secondUser := uuid.New()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO base_user (uuid, username, user_type, created_at, updated_at)
+		VALUES ($1, 'second', 'manual', NOW(), NOW())
+		ON CONFLICT (uuid) DO NOTHING
+	`, secondUser)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO project_member (project_uuid, user_uuid, role_id, joined_at)
+		VALUES ($1, $2, 3, NOW())
+	`, project.UUID, secondUser)
+	require.NoError(t, err)
+
+	err = repo.Delete(ctx, project.UUID)
+	assert.NoError(t, err)
+
+	_, err = repo.FindByID(ctx, project.UUID)
+	assert.ErrorIs(t, err, ErrProjectNotFound)
+}

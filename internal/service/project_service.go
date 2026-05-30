@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	dto "github.com/vega-trello/trello-back/internal/dto/project"
@@ -111,23 +112,31 @@ func (s *ProjectService) UpdateProject(
 	return updated, nil
 }
 
-// DeleteProject удаляет проект с проверками безопасности
+// DeleteProject реализует:
+// - Если пользователь ВЛАДЕЛЕЦ - удаляет проект полностью
+// - Если пользователь УЧАСТНИК (не владелец) - удаляет его из проекта (выход)
+// - Если пользователь НЕ имеет доступа - озвращает ошибку
 func (s *ProjectService) DeleteProject(
 	ctx context.Context,
 	projectUUID uuid.UUID,
 	userUUID uuid.UUID,
 ) error {
-	isOwner, err := s.repo.IsOwner(ctx, projectUUID, userUUID)
-	if err != nil || !isOwner {
-		return ErrAccessDenied
+	isMember, err := s.repo.IsMember(ctx, projectUUID, userUUID)
+	if err != nil {
+		return fmt.Errorf("service: check member: %w", err)
+	}
+	if !isMember {
+		return ErrProjectNotFound
 	}
 
-	err = s.repo.Delete(ctx, projectUUID)
+	isOwner, err := s.repo.IsOwner(ctx, projectUUID, userUUID)
 	if err != nil {
-		if errors.Is(err, ErrProjectNotFound) {
-			return ErrProjectNotFound
-		}
-		return err
+		return fmt.Errorf("service: check owner: %w", err)
 	}
-	return nil
+
+	if isOwner {
+		return s.repo.Delete(ctx, projectUUID)
+	}
+
+	return s.repo.RemoveMember(ctx, projectUUID, userUUID)
 }

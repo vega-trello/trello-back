@@ -43,6 +43,7 @@ type ProjectRepository interface {
 	Delete(ctx context.Context, projectUUID uuid.UUID) error
 	IsMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (bool, error)
 	IsOwner(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) (bool, error)
+	RemoveMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) error
 }
 
 type StatusRepository interface {
