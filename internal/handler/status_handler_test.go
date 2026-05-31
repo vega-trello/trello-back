@@ -101,11 +101,47 @@ func TestStatusHandler_ListProjectStatuses_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var statuses []*model.ProjectStatus
+
+	var statuses []dto.StatusResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &statuses))
 	require.Len(t, statuses, 2)
+
 	assert.Equal(t, "To Do", statuses[0].Name)
 	assert.Equal(t, "In Progress", statuses[1].Name)
+	assert.Equal(t, projectUUID.String(), statuses[0].ProjectUUID)
+	assert.NotEmpty(t, statuses[0].CreatedAt)
+}
+
+func TestStatusHandler_ListProjectStatuses_JsonFormat_Success(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	now := time.Now()
+
+	statusSvc := &mockStatusService{
+		listFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID) ([]*model.ProjectStatus, error) {
+			return []*model.ProjectStatus{
+				{ID: 1, ProjectUUID: projectUUID, Name: "Test", CreatedAt: now},
+			}, nil
+		},
+	}
+
+	r := setupStatusRouter(t, statusSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/statuses", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	body := w.Body.String()
+	assert.Contains(t, body, `"id":`)
+	assert.Contains(t, body, `"project_uuid":`)
+	assert.Contains(t, body, `"name":`)
+	assert.Contains(t, body, `"created_at":`)
+	assert.Contains(t, body, `"Test"`)
 }
 
 func TestStatusHandler_ListProjectStatuses_InvalidUUID(t *testing.T) {
@@ -178,10 +214,12 @@ func TestStatusHandler_CreateStatus_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
-	var status model.ProjectStatus
+
+	var status dto.StatusResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
 	assert.Equal(t, "Done", status.Name)
 	assert.Equal(t, statusID, status.ID)
+	assert.Equal(t, projectUUID.String(), status.ProjectUUID)
 }
 
 func TestStatusHandler_CreateStatus_InvalidName(t *testing.T) {
@@ -250,7 +288,6 @@ func TestStatusHandler_GetStatus_Success(t *testing.T) {
 	r := setupStatusRouter(t, statusSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	// 🔹 statusID в path!
 	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/statuses/"+strconv.Itoa(statusID), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -258,10 +295,12 @@ func TestStatusHandler_GetStatus_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var status model.ProjectStatus
-	json.Unmarshal(w.Body.Bytes(), &status)
+
+	var status dto.StatusResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
 	assert.Equal(t, "Done", status.Name)
 	assert.Equal(t, statusID, status.ID)
+	assert.Equal(t, projectUUID.String(), status.ProjectUUID)
 }
 
 func TestStatusHandler_GetStatus_InvalidStatusID(t *testing.T) {
@@ -271,7 +310,6 @@ func TestStatusHandler_GetStatus_InvalidStatusID(t *testing.T) {
 	r := setupStatusRouter(t, statusSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	// 🔹 statusID не число
 	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/statuses/abc", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -337,9 +375,11 @@ func TestStatusHandler_UpdateStatus_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var status model.ProjectStatus
-	json.Unmarshal(w.Body.Bytes(), &status)
+
+	var status dto.StatusResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
 	assert.Equal(t, "Completed", status.Name)
+	assert.Equal(t, statusID, status.ID)
 }
 
 func TestStatusHandler_UpdateStatus_InvalidName(t *testing.T) {

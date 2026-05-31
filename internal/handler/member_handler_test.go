@@ -91,7 +91,7 @@ func TestMemberHandler_ListProjectMembers_Success(t *testing.T) {
 			return []*dto.MemberResponse{
 				{
 					Username:    "owner_user",
-					UserUUID:    targetUserUUID.String(),
+					UUID:        targetUserUUID.String(),
 					ProjectUUID: projectUUID.String(),
 					RoleID:      1,
 					RoleName:    "owner",
@@ -118,8 +118,7 @@ func TestMemberHandler_ListProjectMembers_Success(t *testing.T) {
 	require.Len(t, resp, 1)
 	assert.Equal(t, "owner_user", resp[0].Username)
 	assert.Equal(t, "owner", resp[0].RoleName)
-	assert.Equal(t, targetUserUUID.String(), resp[0].UserUUID)
-
+	assert.Equal(t, targetUserUUID.String(), resp[0].UUID)
 }
 
 func TestMemberHandler_ListProjectMembers_Empty_Success(t *testing.T) {
@@ -128,7 +127,7 @@ func TestMemberHandler_ListProjectMembers_Empty_Success(t *testing.T) {
 
 	memberSvc := &mockMemberService{
 		listFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID) ([]*dto.MemberResponse, error) {
-			return []*dto.MemberResponse{}, nil // пустой слайс
+			return []*dto.MemberResponse{}, nil
 		},
 	}
 
@@ -200,7 +199,7 @@ func TestMemberHandler_GetMember_Success(t *testing.T) {
 			assert.Equal(t, targetUserUUID, tUUID)
 			return &dto.MemberResponse{
 				Username:    "member_user",
-				UserUUID:    targetUserUUID.String(),
+				UUID:        targetUserUUID.String(),
 				ProjectUUID: projectUUID.String(),
 				RoleID:      3,
 				RoleName:    "member",

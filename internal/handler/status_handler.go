@@ -19,7 +19,6 @@ func NewStatusHandler(statusService StatusServiceInterface) *StatusHandler {
 }
 
 // ListProjectStatuses GET /projects/{projectUUID}/statuses
-// Возвращает все статусы проекта
 func (h *StatusHandler) ListProjectStatuses(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -39,11 +38,11 @@ func (h *StatusHandler) ListProjectStatuses(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, statuses)
+	statusesDTO := dto.FromModels(statuses)
+	c.JSON(http.StatusOK, statusesDTO)
 }
 
 // CreateStatus POST /projects/{projectUUID}/statuses
-// Создаёт новый статус в проекте
 func (h *StatusHandler) CreateStatus(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -74,11 +73,10 @@ func (h *StatusHandler) CreateStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, status)
+	c.JSON(http.StatusCreated, dto.FromModel(status))
 }
 
 // GetStatus GET /projects/{projectUUID}/statuses/{statusID}
-// Возвращает статус по ID
 func (h *StatusHandler) GetStatus(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -110,11 +108,10 @@ func (h *StatusHandler) GetStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, status)
+	c.JSON(http.StatusOK, dto.FromModel(status))
 }
 
 // UpdateStatus PATCH /projects/{projectUUID}/statuses/{statusID}
-// Обновляет имя статуса
 func (h *StatusHandler) UpdateStatus(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -157,11 +154,10 @@ func (h *StatusHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, updated)
+	c.JSON(http.StatusOK, dto.FromModel(updated))
 }
 
 // DeleteStatus DELETE /projects/{projectUUID}/statuses/{statusID}
-// Удаляет статус
 func (h *StatusHandler) DeleteStatus(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {

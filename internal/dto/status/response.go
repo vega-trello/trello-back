@@ -1,23 +1,22 @@
 package dto
 
 import (
-	"github.com/google/uuid"
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
 type StatusResponse struct {
-	ID          int       `json:"id"`
-	ProjectUUID uuid.UUID `json:"project_uuid"`
-	Name        string    `json:"name"`
-	CreatedAt   string    `json:"created_at"`
+	ID          int    `json:"id"`
+	ProjectUUID string `json:"project_uuid"`
+	Name        string `json:"name"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func FromModel(s *model.ProjectStatus) StatusResponse {
 	return StatusResponse{
 		ID:          s.ID,
-		ProjectUUID: s.ProjectUUID,
+		ProjectUUID: s.ProjectUUID.String(),
 		Name:        s.Name,
-		CreatedAt:   s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), // RFC3339
+		CreatedAt:   s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 
