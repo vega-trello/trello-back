@@ -73,6 +73,28 @@ func TestStatusRepository_FindByProject_Success(t *testing.T) {
 	}
 }
 
+func TestStatusRepository_FindByProject_Empty_Success(t *testing.T) {
+	repo, pool, owner, _ := setupStatusRepo(t)
+	ctx := context.Background()
+
+	emptyProject := createTestProject(t, pool, owner)
+
+	statuses, err := repo.FindByProject(ctx, emptyProject, owner)
+	require.NoError(t, err)
+
+	assert.Empty(t, statuses)
+	assert.NotNil(t, statuses)
+}
+
+func TestStatusRepository_FindByProject_AccessDenied(t *testing.T) {
+	repo, pool, _, projectUUID := setupStatusRepo(t)
+	ctx := context.Background()
+
+	outsider := createTestUser(t, pool, "outsider2", "pass123")
+	_, err := repo.FindByProject(ctx, projectUUID, outsider)
+	assert.ErrorIs(t, err, ErrAccessDenied)
+}
+
 func TestStatusRepository_FindByID_Success(t *testing.T) {
 	repo, _, owner, projectUUID := setupStatusRepo(t)
 	ctx := context.Background()
@@ -104,15 +126,6 @@ func TestStatusRepository_FindByID_WrongProject(t *testing.T) {
 
 	_, err := repo.FindByID(ctx, otherProject, created.ID, owner)
 	assert.ErrorIs(t, err, ErrStatusNotFound)
-}
-
-func TestStatusRepository_FindByProject_AccessDenied(t *testing.T) {
-	repo, pool, _, projectUUID := setupStatusRepo(t)
-	ctx := context.Background()
-
-	outsider := createTestUser(t, pool, "outsider2", "pass123")
-	_, err := repo.FindByProject(ctx, projectUUID, outsider)
-	assert.ErrorIs(t, err, ErrAccessDenied)
 }
 
 func TestStatusRepository_Update_Success(t *testing.T) {

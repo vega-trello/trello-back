@@ -92,7 +92,8 @@ func (r *StatusRepository) FindByProject(
 	}
 	defer rows.Close()
 
-	var statuses []*model.ProjectStatus
+	statuses := []*model.ProjectStatus{}
+
 	for rows.Next() {
 		var s model.ProjectStatus
 		if err := rows.Scan(&s.ID, &s.ProjectUUID, &s.Name, &s.CreatedAt); err != nil {
