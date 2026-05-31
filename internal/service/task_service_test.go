@@ -106,11 +106,9 @@ func (m *MockTaskRepository) Delete(
 	return args.Error(0)
 }
 
-func stringPtr(s string) *string { return &s }
-func boolPtr(b bool) *bool       { return &b }
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
+func stringPtr(s string) *string     { return &s }
+func boolPtr(b bool) *bool           { return &b }
+func timePtr(t time.Time) *time.Time { return &t }
 
 func TestTaskService_CreateTask_Success(t *testing.T) {
 	mockRepo := new(MockTaskRepository)
@@ -143,6 +141,34 @@ func TestTaskService_CreateTask_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestTaskService_CreateTask_EmptyTitle_Success(t *testing.T) {
+	mockRepo := new(MockTaskRepository)
+	svc := NewTaskService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+
+	req := dto.CreateTaskRequest{
+		Title:    "",
+		ColumnID: intPtr(1),
+	}
+
+	expected := &model.TaskDB{
+		ID: 1, ColumnID: 1, CreatorUUID: userUUID, Title: "",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+
+	mockRepo.On("Create", ctx, projectUUID, 1, (*int)(nil), userUUID, "", "", (*time.Time)(nil), (*time.Time)(nil)).
+		Return(expected, nil)
+
+	task, err := svc.CreateTask(ctx, projectUUID, userUUID, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "", task.Title) // title может быть пустым
+	mockRepo.AssertExpectations(t)
+}
+
 func TestTaskService_CreateTask_InvalidTitle(t *testing.T) {
 	mockRepo := new(MockTaskRepository)
 	svc := NewTaskService(mockRepo)
@@ -151,11 +177,8 @@ func TestTaskService_CreateTask_InvalidTitle(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	_, err := svc.CreateTask(ctx, projectUUID, userUUID, dto.CreateTaskRequest{Title: "", ColumnID: intPtr(1)})
-	assert.ErrorIs(t, err, ErrInvalidTitle)
-
-	_, err = svc.CreateTask(ctx, projectUUID, userUUID, dto.CreateTaskRequest{
-		Title:    string(make([]byte, 257)),
+	_, err := svc.CreateTask(ctx, projectUUID, userUUID, dto.CreateTaskRequest{
+		Title:    string(make([]byte, 257)), // 257 символов — слишком много
 		ColumnID: intPtr(1),
 	})
 	assert.ErrorIs(t, err, ErrInvalidTitle)
@@ -317,7 +340,6 @@ func TestTaskService_GetTask_NotFound(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	// Репозиторий может вернуть ErrAccessDenied или ErrTaskNotFound — сервис маппит в ErrTaskNotFound
 	mockRepo.On("FindByID", ctx, projectUUID, 1, userUUID).
 		Return(nil, ErrAccessDenied)
 
@@ -373,6 +395,33 @@ func TestTaskService_UpdateTask_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestTaskService_UpdateTask_EmptyTitle_Success(t *testing.T) {
+	mockRepo := new(MockTaskRepository)
+	svc := NewTaskService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	taskID := 1
+
+	empty := ""
+	req := dto.UpdateTaskRequest{Title: &empty}
+
+	expected := &model.TaskDB{
+		ID: taskID, Title: "", ColumnID: 1, CreatorUUID: userUUID,
+		UpdatedAt: time.Now(),
+	}
+
+	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID, &empty, (*string)(nil), (*time.Time)(nil), (*time.Time)(nil), (*int)(nil), (*int)(nil), (*bool)(nil)).
+		Return(expected, nil)
+
+	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "", task.Title) // title очищен
+	mockRepo.AssertExpectations(t)
+}
+
 func TestTaskService_UpdateTask_InvalidTitle(t *testing.T) {
 	mockRepo := new(MockTaskRepository)
 	svc := NewTaskService(mockRepo)
@@ -380,9 +429,10 @@ func TestTaskService_UpdateTask_InvalidTitle(t *testing.T) {
 	ctx := context.Background()
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
-	empty := ""
 
-	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{Title: &empty})
+	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{
+		Title: stringPtr(string(make([]byte, 257))), // 257 символов
+	})
 	assert.ErrorIs(t, err, ErrInvalidTitle)
 
 	mockRepo.AssertNotCalled(t, "Update")
@@ -501,77 +551,3 @@ func TestTaskService_DeleteTask_AccessDenied(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAccessDenied)
 	mockRepo.AssertExpectations(t)
 }
-
-/*
-// MoveTask перемещает задачу в другую колонку
-func TestTaskService_MoveTask_Success(t *testing.T) {
-	mockRepo := new(MockTaskRepository)
-	svc := NewTaskService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-	taskID := 1
-	targetColumnID := 2
-
-	mockRepo.On("Move", ctx, projectUUID, taskID, targetColumnID, userUUID).
-		Return(nil)
-
-	err := svc.MoveTask(ctx, projectUUID, taskID, targetColumnID, userUUID)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestTaskService_MoveTask_InvalidColumn(t *testing.T) {
-	mockRepo := new(MockTaskRepository)
-	svc := NewTaskService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-
-	err := svc.MoveTask(ctx, projectUUID, 1, 0, userUUID)
-	assert.ErrorIs(t, err, ErrInvalidColumn)
-
-	mockRepo.AssertNotCalled(t, "Move")
-}
-
-// ArchiveTask архивирует/разархивирует задачу
-func TestTaskService_ArchiveTask_Success(t *testing.T) {
-	mockRepo := new(MockTaskRepository)
-	svc := NewTaskService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-	taskID := 1
-
-	mockRepo.On("FindByID", ctx, projectUUID, taskID, userUUID).
-		Return(&model.TaskDB{ID: taskID}, nil)
-	mockRepo.On("Archive", ctx, projectUUID, taskID, userUUID, true).
-		Return(nil)
-
-	err := svc.ArchiveTask(ctx, projectUUID, taskID, userUUID, true)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestTaskService_ArchiveTask_NotFound(t *testing.T) {
-	mockRepo := new(MockTaskRepository)
-	svc := NewTaskService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-
-	mockRepo.On("FindByID", ctx, projectUUID, 1, userUUID).
-		Return(nil, ErrTaskNotFound)
-
-	err := svc.ArchiveTask(ctx, projectUUID, 1, userUUID, true)
-
-	assert.ErrorIs(t, err, ErrTaskNotFound)
-	mockRepo.AssertExpectations(t)
-}
-*/

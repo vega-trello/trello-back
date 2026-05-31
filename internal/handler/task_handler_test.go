@@ -109,7 +109,6 @@ func (m *MockTaskService) ArchiveTask(
 	return args.Error(0)
 }
 
-// testAuthMiddleware имитирует middleware.Auth для тестов
 func testAuthMiddleware(userUUID uuid.UUID) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("userUUID", userUUID)
@@ -147,6 +146,9 @@ func createRequest(method, url string, body interface{}) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
+
+func intPtr(i int) *int          { return &i }
+func stringPtr(s string) *string { return &s }
 
 func TestTaskHandler_ListProjectTasks_Success(t *testing.T) {
 	mockSvc := new(MockTaskService)
@@ -188,6 +190,32 @@ func TestTaskHandler_CreateTask_Success(t *testing.T) {
 	reqBody := dto.CreateTaskRequest{Title: "New Task", ColumnID: intPtr(1)}
 	mockTask := &model.TaskDB{
 		ID: 1, Title: "New Task", ColumnID: 1,
+		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	mockSvc.On("CreateTask", mock.Anything, projectUUID, userUUID, mock.AnythingOfType("dto.CreateTaskRequest")).
+		Return(mockTask, nil)
+
+	req := createRequest("POST", "/projects/"+projectUUID.String()+"/tasks", reqBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTaskHandler_CreateTask_EmptyTitle_Success(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	reqBody := dto.CreateTaskRequest{
+		Title:    "",
+		ColumnID: intPtr(1),
+	}
+
+	mockTask := &model.TaskDB{
+		ID: 1, Title: "", ColumnID: 1, // title может быть пустым
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	mockSvc.On("CreateTask", mock.Anything, projectUUID, userUUID, mock.AnythingOfType("dto.CreateTaskRequest")).
@@ -332,6 +360,33 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 	mockSvc.AssertExpectations(t)
 }
 
+func TestTaskHandler_UpdateTask_EmptyTitle_Success(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	empty := ""
+	reqBody := dto.UpdateTaskRequest{
+		Title:    &empty,
+		ColumnID: intPtr(2),
+	}
+
+	mockTask := &model.TaskDB{
+		ID: 42, Title: "", ColumnID: 2, // title очищен
+		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	mockSvc.On("UpdateTask", mock.Anything, projectUUID, 42, userUUID, mock.AnythingOfType("dto.UpdateTaskRequest")).
+		Return(mockTask, nil)
+
+	req := createRequest("PATCH", "/projects/"+projectUUID.String()+"/task?taskID=42", reqBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
 func TestTaskHandler_UpdateTask_MissingColumnID(t *testing.T) {
 	mockSvc := new(MockTaskService)
 	userUUID := uuid.New()
@@ -444,6 +499,3 @@ func TestTaskHandler_DeleteTask_InvalidTaskID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	mockSvc.AssertNotCalled(t, "DeleteTask")
 }
-
-func intPtr(i int) *int          { return &i }
-func stringPtr(s string) *string { return &s }

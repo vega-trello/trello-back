@@ -47,7 +47,7 @@ func (s *TaskService) CreateTask(
 	userUUID uuid.UUID,
 	req dto.CreateTaskRequest,
 ) (*model.TaskDB, error) {
-	if req.Title == "" || len(req.Title) > 256 {
+	if len(req.Title) > 256 {
 		return nil, ErrInvalidTitle
 	}
 	if req.Description != "" && len(req.Description) > 2048 {
@@ -124,7 +124,7 @@ func (s *TaskService) UpdateTask(
 	userUUID uuid.UUID,
 	req dto.UpdateTaskRequest,
 ) (*model.TaskDB, error) {
-	if req.Title != nil && (len(*req.Title) == 0 || len(*req.Title) > 256) {
+	if req.Title != nil && len(*req.Title) > 256 {
 		return nil, ErrInvalidTitle
 	}
 	if req.Description != nil && len(*req.Description) > 2048 {
