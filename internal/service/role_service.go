@@ -12,12 +12,11 @@ import (
 var (
 	ErrInvalidRoleName        = errors.New("role name must be between 1 and 32 characters")
 	ErrInvalidDescription     = errors.New("role description must not exceed 256 characters")
-	ErrNoPermissions          = errors.New("at least one permission is required")
 	ErrSystemRoleProtected    = errors.New("system roles cannot be modified or deleted")
 	ErrRoleInUse              = errors.New("role is in use and cannot be deleted")
 	ErrRoleNotFound           = errors.New("role not found")
 	ErrCannotDeleteSystemRole = errors.New("system roles cannot be modified or deleted")
-	ErrInvalidPermission      = errors.New("invalid permission: not in standard enum") // 🔹 НОВОЕ
+	ErrInvalidPermission      = errors.New("invalid permission: not in standard enum")
 )
 
 type RoleService struct {
@@ -32,7 +31,7 @@ func NewRoleService(repo RoleRepository) *RoleService {
 // из service.AllPermissions() (например, "manage_tasks", а не произвольные строки)
 func (s *RoleService) validatePermissionIDs(ctx context.Context, permissionIDs []int) error {
 	if len(permissionIDs) == 0 {
-		return nil // Пустой список уже проверен выше
+		return nil
 	}
 
 	permNames, err := s.repo.GetPermissionNamesByID(ctx, permissionIDs)
@@ -40,7 +39,6 @@ func (s *RoleService) validatePermissionIDs(ctx context.Context, permissionIDs [
 		return fmt.Errorf("service: validate permissions: %w", err)
 	}
 
-	// Проверяем каждое право против стандартного enum
 	for id, name := range permNames {
 		if !IsValidPermission(name) {
 			return fmt.Errorf("%w: permission ID %d has name '%s'", ErrInvalidPermission, id, name)
@@ -64,12 +62,11 @@ func (s *RoleService) CreateRole(
 	if description != nil && len(*description) > 256 {
 		return nil, ErrInvalidDescription
 	}
-	if len(permissionIDs) == 0 {
-		return nil, ErrNoPermissions
-	}
 
-	if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
-		return nil, err
+	if len(permissionIDs) > 0 {
+		if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.repo.Create(ctx, projectUUID, userUUID, name, description, permissionIDs)
@@ -117,12 +114,11 @@ func (s *RoleService) UpdateRole(
 	if description != nil && len(*description) > 256 {
 		return nil, ErrInvalidDescription
 	}
-	if len(permissionIDs) == 0 {
-		return nil, ErrNoPermissions
-	}
 
-	if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
-		return nil, err
+	if len(permissionIDs) > 0 {
+		if err := s.validatePermissionIDs(ctx, permissionIDs); err != nil {
+			return nil, err
+		}
 	}
 
 	role, err := s.repo.Update(ctx, projectUUID, roleID, userUUID, name, description, permissionIDs)

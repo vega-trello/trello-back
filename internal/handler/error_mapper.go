@@ -117,8 +117,6 @@ func handleServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_role_name", err.Error())
 	case errors.Is(err, service.ErrInvalidDescription):
 		respondError(c, http.StatusBadRequest, "invalid_role_description", err.Error())
-	case errors.Is(err, service.ErrNoPermissions):
-		respondError(c, http.StatusBadRequest, "no_permissions", err.Error())
 
 	//status errors
 	case errors.Is(err, service.ErrStatusNotFound):

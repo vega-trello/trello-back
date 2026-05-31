@@ -9,7 +9,6 @@ type CreateRoleRequest struct {
 }
 
 func (r CreateRoleRequest) Validate() error {
-
 	if r.Name == "" || len(r.Name) > 32 {
 		return errors.New("name must be between 1 and 32 characters")
 	}
@@ -18,9 +17,6 @@ func (r CreateRoleRequest) Validate() error {
 		return errors.New("description must not exceed 256 characters")
 	}
 
-	if len(r.PermissionIDs) == 0 {
-		return errors.New("at least one permission_id is required")
-	}
 	return nil
 }
 
@@ -31,7 +27,6 @@ type UpdateRoleRequest struct {
 }
 
 func (r UpdateRoleRequest) Validate() error {
-
 	if r.Name == "" || len(r.Name) > 32 {
 		return errors.New("name must be between 1 and 32 characters")
 	}
@@ -40,8 +35,5 @@ func (r UpdateRoleRequest) Validate() error {
 		return errors.New("description must not exceed 256 characters")
 	}
 
-	if len(r.PermissionIDs) == 0 {
-		return errors.New("at least one permission_id is required")
-	}
 	return nil
 }

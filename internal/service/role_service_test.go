@@ -103,6 +103,36 @@ func TestRoleService_CreateRole_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestRoleService_CreateRole_EmptyPermissions_Success(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	name := "EmptyRole"
+	desc := "No permissions yet"
+	descPtr := &desc
+
+	expectedRole := &model.Role{
+		ID:          11,
+		ProjectUUID: &projectUUID,
+		Name:        name,
+		Description: descPtr,
+	}
+
+	mockRepo.On("Create", ctx, projectUUID, userUUID, name, descPtr, []int{}).
+		Return(expectedRole, nil)
+
+	role, err := svc.CreateRole(ctx, projectUUID, userUUID, name, descPtr, []int{})
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedRole, role)
+	mockRepo.AssertExpectations(t)
+
+	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
+}
+
 func TestRoleService_CreateRole_InvalidName(t *testing.T) {
 	mockRepo := new(MockRoleRepository)
 	svc := NewRoleService(mockRepo)
@@ -132,21 +162,6 @@ func TestRoleService_CreateRole_InvalidDescription(t *testing.T) {
 
 	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Valid", &longDesc, []int{1})
 	assert.ErrorIs(t, err, ErrInvalidDescription)
-
-	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
-	mockRepo.AssertNotCalled(t, "Create")
-}
-
-func TestRoleService_CreateRole_NoPermissions(t *testing.T) {
-	mockRepo := new(MockRoleRepository)
-	svc := NewRoleService(mockRepo)
-
-	ctx := context.Background()
-	projectUUID := uuid.New()
-	userUUID := uuid.New()
-
-	_, err := svc.CreateRole(ctx, projectUUID, userUUID, "Admin", nil, []int{})
-	assert.ErrorIs(t, err, ErrNoPermissions)
 
 	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
 	mockRepo.AssertNotCalled(t, "Create")
@@ -272,6 +287,38 @@ func TestRoleService_UpdateRole_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectedRole, role)
 	mockRepo.AssertExpectations(t)
+}
+
+// 🔹 ИЗМЕНЕНО: пустой список прав теперь разрешён при обновлении роли
+func TestRoleService_UpdateRole_EmptyPermissions_Success(t *testing.T) {
+	mockRepo := new(MockRoleRepository)
+	svc := NewRoleService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	testRoleID := 10
+	newName := "Updated"
+	newDesc := "Cleared permissions"
+	newDescPtr := &newDesc
+
+	expectedRole := &model.Role{
+		ID:          testRoleID,
+		ProjectUUID: &projectUUID,
+		Name:        newName,
+		Description: newDescPtr,
+	}
+
+	mockRepo.On("Update", ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, []int{}).
+		Return(expectedRole, nil)
+
+	role, err := svc.UpdateRole(ctx, projectUUID, testRoleID, userUUID, newName, newDescPtr, []int{})
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedRole, role)
+	mockRepo.AssertExpectations(t)
+
+	mockRepo.AssertNotCalled(t, "GetPermissionNamesByID")
 }
 
 func TestRoleService_UpdateRole_InvalidPermission(t *testing.T) {
