@@ -100,7 +100,6 @@ func (r *MemberRepository) FindByProjectUUID(
 	return members, nil
 }
 
-// FindByProjectUUIDWithDetails возвращает участников с данными пользователя и именем роли
 // Используется для формирования ответов API (GET /projects/{uuid}/members)
 func (r *MemberRepository) FindByProjectUUIDWithDetails(
 	ctx context.Context,
@@ -109,7 +108,7 @@ func (r *MemberRepository) FindByProjectUUIDWithDetails(
 	rows, err := r.db.Query(ctx, `
 		SELECT 
 			u.username,
-			u.uuid AS user_uuid,
+			u.uuid AS uuid,           
 			pm.project_uuid,
 			pm.role_id,
 			r.name AS role_name,
@@ -131,7 +130,7 @@ func (r *MemberRepository) FindByProjectUUIDWithDetails(
 		var m dto.MemberResponse
 		if err := rows.Scan(
 			&m.Username,    // u.username
-			&m.UserUUID,    // u.uuid AS user_uuid
+			&m.UUID,        // u.uuid AS uuid (было &m.UserUUID)
 			&m.ProjectUUID, // pm.project_uuid
 			&m.RoleID,      // pm.role_id
 			&m.RoleName,    // r.name AS role_name

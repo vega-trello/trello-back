@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dto "github.com/vega-trello/trello-back/internal/dto/member" // 🔹 ДОБАВЛЕНО
 )
 
 func setupMemberRepo(t *testing.T) (*MemberRepository, *pgxpool.Pool, uuid.UUID) {
@@ -57,10 +58,9 @@ func TestMemberRepository_FindByProjectUUID_Success(t *testing.T) {
 }
 
 func TestMemberRepository_FindByProjectUUID_Empty_Success(t *testing.T) {
-	repo, pool, _ := setupMemberRepo(t) // 🔹 _ вместо owner
+	repo, pool, _ := setupMemberRepo(t)
 	ctx := context.Background()
 
-	// Создаём проект без участников
 	projectUUID := uuid.New()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO project (uuid, title, description, created_at, updated_at)
@@ -165,4 +165,33 @@ func TestMemberRepository_FindByProjectUUIDWithDetails_Empty_Success(t *testing.
 
 	assert.Empty(t, members)
 	assert.NotNil(t, members)
+}
+
+func TestMemberRepository_FindByProjectUUIDWithDetails_Fields_Success(t *testing.T) {
+	repo, pool, owner := setupMemberRepo(t)
+	ctx := context.Background()
+
+	projectUUID := createTestProject(t, pool, owner)
+	memberUUID := createTestUser(t, pool, "test_member", "pass123")
+	_, err := repo.Create(ctx, projectUUID, memberUUID, RoleMember)
+	require.NoError(t, err)
+
+	members, err := repo.FindByProjectUUIDWithDetails(ctx, projectUUID)
+	require.NoError(t, err)
+	require.Len(t, members, 2)
+
+	var found *dto.MemberResponse
+	for _, m := range members {
+		if m.Username == "test_member" {
+			found = m
+			break
+		}
+	}
+	require.NotNil(t, found, "test_member not found in response")
+
+	assert.NotEmpty(t, found.UUID, "field 'uuid' should not be empty")
+	assert.Equal(t, memberUUID.String(), found.UUID, "uuid should match user UUID")
+	assert.Equal(t, projectUUID.String(), found.ProjectUUID)
+	assert.NotZero(t, found.RoleID)
+	assert.False(t, found.JoinedAt.IsZero())
 }

@@ -75,7 +75,7 @@ func (s *MemberService) GetMember(
 		return nil, err
 	}
 	for _, m := range members {
-		if m.UserUUID == targetUserUUID.String() {
+		if m.UUID == targetUserUUID.String() {
 			return m, nil
 		}
 	}

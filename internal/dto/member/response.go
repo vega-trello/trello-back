@@ -6,14 +6,13 @@ import (
 
 type MemberResponse struct {
 	Username    string    `json:"username"`
-	UserUUID    string    `json:"user_uuid"`
+	UUID        string    `json:"uuid"`
 	ProjectUUID string    `json:"project_uuid"`
 	RoleID      int       `json:"role_id"`
-	RoleName    string    `json:"role_name"`
 	JoinedAt    time.Time `json:"joined_at"`
+	RoleName    string    `json:"role_name,omitempty"`
 }
 
-// Ответ на GET /api/v1/projects/:id/members
 type MemberListResponse struct {
 	Members []MemberResponse `json:"members"`
 	Total   int              `json:"total"`
