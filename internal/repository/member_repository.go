@@ -63,7 +63,6 @@ func (r *MemberRepository) Create(
 	return &member, nil
 }
 
-// FindByProjectUUID возвращает базовый список участников (только данные из project_member)
 func (r *MemberRepository) FindByProjectUUID(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -79,7 +78,8 @@ func (r *MemberRepository) FindByProjectUUID(
 	}
 	defer rows.Close()
 
-	var members []*model.ProjectMember
+	members := []*model.ProjectMember{}
+
 	for rows.Next() {
 		var member model.ProjectMember
 		if err := rows.Scan(
@@ -125,16 +125,17 @@ func (r *MemberRepository) FindByProjectUUIDWithDetails(
 	}
 	defer rows.Close()
 
-	var members []*dto.MemberResponse
+	members := []*dto.MemberResponse{}
+
 	for rows.Next() {
 		var m dto.MemberResponse
 		if err := rows.Scan(
-			&m.Username,
-			&m.UserUUID,
-			&m.ProjectUUID,
-			&m.RoleID,
-			&m.RoleName,
-			&m.JoinedAt,
+			&m.Username,    // u.username
+			&m.UserUUID,    // u.uuid AS user_uuid
+			&m.ProjectUUID, // pm.project_uuid
+			&m.RoleID,      // pm.role_id
+			&m.RoleName,    // r.name AS role_name
+			&m.JoinedAt,    // pm.joined_at
 		); err != nil {
 			return nil, fmt.Errorf("repository: scan member response: %w", err)
 		}

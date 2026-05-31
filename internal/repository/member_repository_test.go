@@ -53,8 +53,26 @@ func TestMemberRepository_FindByProjectUUID_Success(t *testing.T) {
 
 	members, err := repo.FindByProjectUUID(ctx, projectUUID)
 	require.NoError(t, err)
-	// Ожидаем 3: владелец (добавлен в createTestProject) + 2 добавленных пользователя
 	require.Len(t, members, 3)
+}
+
+func TestMemberRepository_FindByProjectUUID_Empty_Success(t *testing.T) {
+	repo, pool, _ := setupMemberRepo(t) // 🔹 _ вместо owner
+	ctx := context.Background()
+
+	// Создаём проект без участников
+	projectUUID := uuid.New()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO project (uuid, title, description, created_at, updated_at)
+		VALUES ($1, 'Empty Project', '', NOW(), NOW())
+	`, projectUUID)
+	require.NoError(t, err)
+
+	members, err := repo.FindByProjectUUID(ctx, projectUUID)
+	require.NoError(t, err)
+
+	assert.Empty(t, members)
+	assert.NotNil(t, members)
 }
 
 func TestMemberRepository_FindByProjectAndUser_Success(t *testing.T) {
@@ -71,6 +89,16 @@ func TestMemberRepository_FindByProjectAndUser_Success(t *testing.T) {
 	assert.Equal(t, RoleAdmin, member.RoleID)
 }
 
+func TestMemberRepository_FindByProjectAndUser_NotFound(t *testing.T) {
+	repo, pool, owner := setupMemberRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+	unknownUUID := uuid.New()
+
+	_, err := repo.FindByProjectAndUser(ctx, projectUUID, unknownUUID)
+	assert.ErrorIs(t, err, ErrMemberNotFound)
+}
+
 func TestMemberRepository_Update_Promote(t *testing.T) {
 	repo, pool, owner := setupMemberRepo(t)
 	ctx := context.Background()
@@ -83,6 +111,16 @@ func TestMemberRepository_Update_Promote(t *testing.T) {
 	member, err := repo.Update(ctx, projectUUID, userUUID, RoleAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, RoleAdmin, member.RoleID)
+}
+
+func TestMemberRepository_Update_NotFound(t *testing.T) {
+	repo, pool, owner := setupMemberRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+	unknownUUID := uuid.New()
+
+	_, err := repo.Update(ctx, projectUUID, unknownUUID, RoleAdmin)
+	assert.ErrorIs(t, err, ErrMemberNotFound)
 }
 
 func TestMemberRepository_Delete_Success(t *testing.T) {
@@ -99,4 +137,32 @@ func TestMemberRepository_Delete_Success(t *testing.T) {
 
 	_, err = repo.FindByProjectAndUser(ctx, projectUUID, userUUID)
 	assert.ErrorIs(t, err, ErrMemberNotFound)
+}
+
+func TestMemberRepository_Delete_NotFound(t *testing.T) {
+	repo, pool, owner := setupMemberRepo(t)
+	ctx := context.Background()
+	projectUUID := createTestProject(t, pool, owner)
+	unknownUUID := uuid.New()
+
+	err := repo.Delete(ctx, projectUUID, unknownUUID)
+	assert.ErrorIs(t, err, ErrMemberNotFound)
+}
+
+func TestMemberRepository_FindByProjectUUIDWithDetails_Empty_Success(t *testing.T) {
+	repo, pool, _ := setupMemberRepo(t)
+	ctx := context.Background()
+
+	projectUUID := uuid.New()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO project (uuid, title, description, created_at, updated_at)
+		VALUES ($1, 'Empty Details Project', '', NOW(), NOW())
+	`, projectUUID)
+	require.NoError(t, err)
+
+	members, err := repo.FindByProjectUUIDWithDetails(ctx, projectUUID)
+	require.NoError(t, err)
+
+	assert.Empty(t, members)
+	assert.NotNil(t, members)
 }

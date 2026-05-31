@@ -45,10 +45,7 @@ func (h *MemberHandler) ListProjectMembers(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, dto.MemberListResponse{
-		Members: membersList,
-		Total:   len(membersList),
-	})
+	c.JSON(http.StatusOK, membersList)
 }
 
 // GetMember GET /projects/{projectUUID}/member?userUUID={uuid}

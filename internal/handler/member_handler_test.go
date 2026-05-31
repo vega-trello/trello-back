@@ -35,24 +35,28 @@ func (m *mockMemberService) GetProjectMembers(ctx context.Context, projectUUID u
 	}
 	return nil, nil
 }
+
 func (m *mockMemberService) GetMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID) (*dto.MemberResponse, error) {
 	if m.getFunc != nil {
 		return m.getFunc(ctx, projectUUID, userUUID, targetUserUUID)
 	}
 	return nil, nil
 }
+
 func (m *mockMemberService) AddMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, req dto.CreateMemberRequest) (*model.ProjectMember, error) {
 	if m.addFunc != nil {
 		return m.addFunc(ctx, projectUUID, userUUID, req)
 	}
 	return nil, nil
 }
+
 func (m *mockMemberService) UpdateMemberRole(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID, req dto.UpdateMemberRequest) (*model.ProjectMember, error) {
 	if m.updateRoleFunc != nil {
 		return m.updateRoleFunc(ctx, projectUUID, userUUID, targetUserUUID, req)
 	}
 	return nil, nil
 }
+
 func (m *mockMemberService) RemoveMember(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, targetUserUUID uuid.UUID) error {
 	if m.removeFunc != nil {
 		return m.removeFunc(ctx, projectUUID, userUUID, targetUserUUID)
@@ -107,12 +111,42 @@ func TestMemberHandler_ListProjectMembers_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var resp dto.MemberListResponse
+
+	var resp []dto.MemberResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, 1, resp.Total)
-	require.Len(t, resp.Members, 1)
-	assert.Equal(t, "owner_user", resp.Members[0].Username)
-	assert.Equal(t, "owner", resp.Members[0].RoleName)
+
+	require.Len(t, resp, 1)
+	assert.Equal(t, "owner_user", resp[0].Username)
+	assert.Equal(t, "owner", resp[0].RoleName)
+	assert.Equal(t, targetUserUUID.String(), resp[0].UserUUID)
+
+}
+
+func TestMemberHandler_ListProjectMembers_Empty_Success(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+
+	memberSvc := &mockMemberService{
+		listFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID) ([]*dto.MemberResponse, error) {
+			return []*dto.MemberResponse{}, nil // пустой слайс
+		},
+	}
+
+	r := setupMemberRouter(t, memberSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/members", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []dto.MemberResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+	assert.Equal(t, "[]", w.Body.String())
 }
 
 func TestMemberHandler_ListProjectMembers_InvalidUUID(t *testing.T) {
