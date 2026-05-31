@@ -58,10 +58,7 @@ func (h *AssigneeHandler) ListTaskAssignees(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, dto.AssingeeResponse{
-		Assignees: assigneesList,
-		Total:     len(assigneesList),
-	})
+	c.JSON(http.StatusOK, assigneesList)
 }
 
 // AddAssignee POST /projects/{projectUUID}/assignees?taskID={id}

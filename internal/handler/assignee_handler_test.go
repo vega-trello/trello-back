@@ -33,12 +33,14 @@ func (m *mockAssigneeService) GetTaskAssignees(ctx context.Context, projectUUID 
 	}
 	return nil, nil
 }
+
 func (m *mockAssigneeService) AssignUserToTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, req dto.CreateAssigneeRequest) error {
 	if m.assignFunc != nil {
 		return m.assignFunc(ctx, projectUUID, taskID, userUUID, req)
 	}
 	return nil
 }
+
 func (m *mockAssigneeService) RemoveAssignee(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, assigneeUUID uuid.UUID) error {
 	if m.removeFunc != nil {
 		return m.removeFunc(ctx, projectUUID, taskID, userUUID, assigneeUUID)
@@ -94,11 +96,42 @@ func TestAssigneeHandler_ListTaskAssignees_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var resp dto.AssingeeResponse
+
+	var resp []dto.AssigneeResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, 1, resp.Total)
-	require.Len(t, resp.Assignees, 1)
-	assert.Equal(t, "assigned_user", resp.Assignees[0].User.Username)
+
+	require.Len(t, resp, 1)
+	assert.Equal(t, "assigned_user", resp[0].User.Username)
+	assert.Equal(t, taskID, resp[0].TaskID)
+	assert.Equal(t, assigneeUUID.String(), resp[0].UserUUID)
+}
+
+func TestAssigneeHandler_ListTaskAssignees_Empty_Success(t *testing.T) {
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	taskID := 105
+
+	assigneeSvc := &mockAssigneeService{
+		listFunc: func(ctx context.Context, pUUID uuid.UUID, tID int, uUUID uuid.UUID) ([]*dto.AssigneeResponse, error) {
+			return []*dto.AssigneeResponse{}, nil // пустой слайс
+		},
+	}
+
+	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	req := httptest.NewRequest("GET", "/projects/"+projectUUID.String()+"/assignees?taskID="+strconv.Itoa(taskID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []dto.AssigneeResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+	assert.Equal(t, "[]", w.Body.String())
 }
 
 func TestAssigneeHandler_ListTaskAssignees_MissingTaskID(t *testing.T) {
@@ -197,7 +230,7 @@ func TestAssigneeHandler_AddAssignee_MissingTaskID(t *testing.T) {
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
 	body := bytes.NewBufferString(`{"userUUID": "` + assigneeUUID.String() + `"}`)
-	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees", body) // 🔹 нет taskID
+	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
