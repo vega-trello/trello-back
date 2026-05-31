@@ -105,7 +105,7 @@ func (h *UserHandler) ExchangeSSOToken(c *gin.Context) {
 		"gri": profile.GRI,
 	})
 
-	user, err := h.userService.LoginBySSO(c.Request.Context(), "vega", profile.UAI, username, metadata)
+	user, err := h.userService.LoginBySSO(c.Request.Context(), "vega", profile.GetUAI(), username, metadata)
 	if err != nil {
 		handleServiceError(c, err)
 		return
@@ -159,8 +159,8 @@ func (h *UserHandler) UpdateSelfProfile(c *gin.Context) {
 	updated, err := h.userService.UpdateSelfProfile(
 		c.Request.Context(),
 		userUUID,
-		req.Username, // *string: nil если не меняем ник
-		req.Password, // *string: nil если не меняем пароль
+		req.Username,
+		req.Password,
 	)
 	if err != nil {
 		handleServiceError(c, err)
@@ -228,7 +228,7 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 		return nil, fmt.Errorf("failed to parse vega response: %w", err)
 	}
 
-	if profile.UAI == "" {
+	if profile.GetUAI() == "" {
 		return nil, errors.New("invalid SSO token: missing 'uai'")
 	}
 
@@ -236,10 +236,14 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 }
 
 type VegaProfile struct {
-	UAI string `json:"uai"`
-	FIR string `json:"fir"`
-	SIR string `json:"sir"`
-	MID string `json:"mid"`
-	GRI string `json:"gri"`
-	GRN string `json:"grn"`
+	UAI json.Number `json:"uai"`
+	FIR string      `json:"fir"`
+	SIR string      `json:"sir"`
+	MID string      `json:"mid"`
+	GRI string      `json:"gri"`
+	GRN string      `json:"grn"`
+}
+
+func (p *VegaProfile) GetUAI() string {
+	return p.UAI.String()
 }

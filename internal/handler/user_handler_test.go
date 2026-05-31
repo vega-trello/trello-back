@@ -59,7 +59,6 @@ func (m *mockUserService) GetSelfProfile(ctx context.Context, userUUID uuid.UUID
 	}
 	return nil, nil
 }
-
 func (m *mockUserService) UpdateSelfProfile(ctx context.Context, userUUID uuid.UUID, newUsername *string, newPassword *string) (*model.SelfUser, error) {
 	if m.updateSelfProfileFunc != nil {
 		return m.updateSelfProfileFunc(ctx, userUUID, newUsername, newPassword)
@@ -252,6 +251,7 @@ func TestHandler_ExchangeSSOToken_Success(t *testing.T) {
 	vegaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		// 🔹 uai как строка (старый формат)
 		json.NewEncoder(w).Encode(map[string]string{
 			"uai": "530", "fir": "Иван", "sir": "Петров", "grn": "КМБО-02-22", "gri": "42",
 		})
@@ -262,16 +262,9 @@ func TestHandler_ExchangeSSOToken_Success(t *testing.T) {
 	svc := &mockUserService{
 		loginSSOFunc: func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error) {
 			assert.Equal(t, "vega", provider)
-			assert.Equal(t, "530", extID)
-
-			assert.Regexp(t, `^[a-z]+_[a-z]+_\d{1,3}$`, username,
-				"username should match format: {adjective}_{noun}_{number}")
-
-			assert.GreaterOrEqual(t, len(username), 1, "username should be at least 1 character")
-			assert.LessOrEqual(t, len(username), 32, "username should not exceed 32 characters")
-
+			assert.Equal(t, "530", extID) // ← строка "530"
+			assert.Regexp(t, `^[a-z]+_[a-z]+_\d{1,3}$`, username)
 			assert.JSONEq(t, `{"fir":"Иван","sir":"Петров","mid":"","grn":"КМБО-02-22","gri":"42"}`, string(metadata))
-
 			return &model.User{UUID: testUUID, Username: username, UserType: "sso"}, nil
 		},
 	}
@@ -290,6 +283,43 @@ func TestHandler_ExchangeSSOToken_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NotEmpty(t, resp.Token)
 }
+
+func TestHandler_ExchangeSSOToken_Success_UAIAsNumber(t *testing.T) {
+	vegaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"uai": 530, "fir": "Иван", "sir": "Петров", "grn": "КМБО-02-22", "gri": "42",
+		})
+	}))
+	defer vegaServer.Close()
+
+	testUUID := uuid.New()
+	svc := &mockUserService{
+		loginSSOFunc: func(ctx context.Context, provider, extID, username string, metadata json.RawMessage) (*model.User, error) {
+			assert.Equal(t, "vega", provider)
+			assert.Equal(t, "530", extID)
+			assert.Regexp(t, `^[a-z]+_[a-z]+_\d{1,3}$`, username)
+			assert.JSONEq(t, `{"fir":"Иван","sir":"Петров","mid":"","grn":"КМБО-02-22","gri":"42"}`, string(metadata))
+			return &model.User{UUID: testUUID, Username: username, UserType: "sso"}, nil
+		},
+	}
+
+	r, h := setupPublicTestRouter(t, svc, "test-secret")
+	h.vegaBaseURL = vegaServer.URL + "/authservice.php"
+
+	body := bytes.NewBufferString(`{"token":"external_sso_token_123"}`)
+	req := httptest.NewRequest("POST", "/auth/sso/exchange", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp dto.SSOExchangeResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NotEmpty(t, resp.Token)
+}
+
 func TestHandler_ExchangeSSOToken_InvalidVegaResponse(t *testing.T) {
 	vegaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -443,7 +473,6 @@ func TestHandler_GetOtherUserProfile_InvalidUserUUID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var errResp dto.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
-	// 🔹 Унифицированный код ошибки
 	assert.Equal(t, "invalid_param", errResp.Error)
 }
 
@@ -606,7 +635,6 @@ func TestHandler_UpdateSelfProfile_PasswordTooShort(t *testing.T) {
 	r, _ := setupProtectedTestRouter(t, svc, "test-secret")
 	token := generateTestToken(t, testUUID, "test-secret")
 
-	// 🔹 Короткий пароль
 	body := bytes.NewBufferString(`{"password":"123"}`)
 	req := httptest.NewRequest("PATCH", "/self", body)
 	req.Header.Set("Content-Type", "application/json")
