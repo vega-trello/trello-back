@@ -5,7 +5,7 @@ import (
 )
 
 type CreateAssigneeRequest struct {
-	UserUUID string `json:"userUUID" binding:"required"`
+	UserUUID string `json:"user_uuid" binding:"required"`
 }
 
 func (r *CreateAssigneeRequest) Validate() error {
