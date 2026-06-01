@@ -70,6 +70,7 @@ func (r *RoleRepository) Create(
 	return &role, nil
 }
 
+// FindByProjectUUID возвращает все роли проекта + системные роли (кроме "Создателя")
 func (r *RoleRepository) FindByProjectUUID(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -86,8 +87,9 @@ func (r *RoleRepository) FindByProjectUUID(
 	rows, err := r.db.Query(ctx, `
 		SELECT id, project_uuid, name, description 
 		FROM role 
-		WHERE project_uuid = $1 
-		ORDER BY name ASC
+		WHERE (project_uuid = $1 OR project_uuid IS NULL)
+		  AND id != 1  -- 🔹 исключаем "Создателя"
+		ORDER BY project_uuid IS NULL DESC, name ASC
 	`, projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("repository: find roles by project: %w", err)
