@@ -39,6 +39,20 @@ func (r *ColumnRepository) Create(
 	pos := 0
 	if position != nil {
 		pos = *position
+	} else {
+		var maxPos *int
+		err = tx.QueryRow(ctx, `
+			SELECT MAX(position) FROM project_column 
+			WHERE project_uuid = $1
+		`, projectUUID).Scan(&maxPos)
+		if err != nil {
+			return nil, fmt.Errorf("repository: get max position: %w", err)
+		}
+		if maxPos != nil {
+			pos = *maxPos + 1
+		} else {
+			pos = 0
+		}
 	}
 
 	var column model.Column
@@ -52,6 +66,7 @@ func (r *ColumnRepository) Create(
 	if err != nil {
 		return nil, fmt.Errorf("repository: create column: %w", err)
 	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
 	}
@@ -68,7 +83,7 @@ func (r *ColumnRepository) FindByProjectUUID(
 	}
 	rows, err := r.db.Query(ctx, `
 		SELECT id, project_uuid, name, position, created_at
-		FROM project_column
+		FROM 	project_column
 		WHERE project_uuid = $1
 		ORDER BY position ASC, created_at ASC
 	`, projectUUID)
@@ -184,7 +199,6 @@ func (r *ColumnRepository) Delete(
 	return nil
 }
 
-// Move меняет позицию колонки на 1 влево или вправо (обмен с соседом)
 func (r *ColumnRepository) Move(
 	ctx context.Context,
 	columnID int,
@@ -213,22 +227,24 @@ func (r *ColumnRepository) Move(
 		return nil, err
 	}
 
-	targetPos := col.Position
-	if direction == "left" {
-		targetPos--
-	} else {
-		targetPos++
-	}
-
-	if targetPos < 0 {
-		return &col, nil
-	}
-
 	var neighborID int
-	err = tx.QueryRow(ctx, `
-		SELECT id FROM project_column 
-		WHERE project_uuid = $1 AND position = $2 AND id != $3
-	`, col.ProjectUUID, targetPos, columnID).Scan(&neighborID)
+	var neighborPos int
+
+	if direction == "left" {
+		err = tx.QueryRow(ctx, `
+			SELECT id, position FROM project_column 
+			WHERE project_uuid = $1 AND position < $2 AND id != $3
+			ORDER BY position DESC 
+			LIMIT 1
+		`, col.ProjectUUID, col.Position, columnID).Scan(&neighborID, &neighborPos)
+	} else {
+		err = tx.QueryRow(ctx, `
+			SELECT id, position FROM project_column 
+			WHERE project_uuid = $1 AND position > $2 AND id != $3
+			ORDER BY position ASC 
+			LIMIT 1
+		`, col.ProjectUUID, col.Position, columnID).Scan(&neighborID, &neighborPos)
+	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &col, nil
@@ -237,19 +253,22 @@ func (r *ColumnRepository) Move(
 		return nil, fmt.Errorf("repository: find neighbor: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `UPDATE project_column SET position = $1 WHERE id = $2`, targetPos, columnID)
+	_, err = tx.Exec(ctx, `UPDATE project_column SET position = $1 WHERE id = $2`, neighborPos, columnID)
 	if err != nil {
-		return nil, fmt.Errorf("repository: move column: %w", err)
+		return nil, fmt.Errorf("repository: update column position: %w", err)
 	}
 	_, err = tx.Exec(ctx, `UPDATE project_column SET position = $1 WHERE id = $2`, col.Position, neighborID)
 	if err != nil {
-		return nil, fmt.Errorf("repository: swap neighbor: %w", err)
+		return nil, fmt.Errorf("repository: update neighbor position: %w", err)
 	}
 
 	err = tx.QueryRow(ctx, `
 		SELECT id, project_uuid, name, position, created_at 
 		FROM project_column WHERE id = $1
 	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("repository: refresh column: %w", err)
+	}
 
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("repository: commit transaction: %w", err)
