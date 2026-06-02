@@ -7,9 +7,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vega-trello/trello-back/internal/model"
 )
+
+var ErrTagAlreadyExists = errors.New("tag already exists in project")
 
 type TagRepository struct {
 	db *pgxpool.Pool
@@ -45,6 +48,9 @@ func (r *TagRepository) Create(
 		&tag.ID, &tag.ProjectUUID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt,
 	)
 	if err != nil {
+		if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrTagAlreadyExists
+		}
 		return nil, fmt.Errorf("repository: create tag: %w", err)
 	}
 	if err = tx.Commit(ctx); err != nil {

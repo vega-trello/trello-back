@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	dto "github.com/vega-trello/trello-back/internal/dto/tag"
 	"github.com/vega-trello/trello-back/internal/model"
+	"github.com/vega-trello/trello-back/internal/repository"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 	ErrTagNotInProject    = errors.New("tag does not belong to this project")
 	ErrTaskNotInProject   = errors.New("task does not belong to this project")
 	ErrTagAlreadyAttached = errors.New("tag is already attached to this task")
+	ErrInvalidTagColor    = errors.New("color must be a valid HEX string (#RRGGBB)")
 )
 
 // hexColorRegex для валидации в сервисе (дублирует DTO для надёжности)
@@ -88,10 +90,9 @@ func (s *TagService) CreateTag(
 
 	tag, err := s.repo.Create(ctx, projectUUID, userUUID, req.Name, req.Color)
 	if err != nil {
-		// Репозиторий может вернуть ошибку уникальности (зависит от реализации)
-		// if errors.Is(err, repository.ErrTagAlreadyExists) {
-		//     return nil, ErrTagAlreadyExists
-		// }
+		if errors.Is(err, repository.ErrTagAlreadyExists) {
+			return nil, ErrTagAlreadyExists
+		}
 		if errors.Is(err, ErrAccessDenied) {
 			return nil, ErrAccessDenied
 		}
