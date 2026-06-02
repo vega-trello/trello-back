@@ -88,14 +88,12 @@ func (s *ColumnService) UpdateColumn(
 	userUUID uuid.UUID,
 	req dto.UpdateColumnRequest,
 ) (*model.Column, error) {
-	// 🔹 Валидация
 	if req.Name == "" || len(req.Name) > 64 {
 		return nil, ErrInvalidColumnName
 	}
 	if req.Position != nil && *req.Position < 0 {
 		return nil, ErrInvalidPosition
 	}
-	// 🔹 Валидация цвета если передан
 	if req.Color != nil && !isValidHexColor(*req.Color) {
 		return nil, errors.New("color must be a valid HEX string (#RRGGBB)")
 	}
@@ -159,12 +157,14 @@ func (s *ColumnService) MoveColumn(
 	return updated, nil
 }
 
-// isValidHexColor проверяет формат цвета (#RRGGBB)
 func isValidHexColor(s string) bool {
-	if len(s) != 7 || s[0] != '#' {
+	if len(s) != 7 && len(s) != 9 {
 		return false
 	}
-	for i := 1; i < 7; i++ {
+	if s[0] != '#' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
 		c := s[i]
 		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
 			return false

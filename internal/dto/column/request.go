@@ -15,8 +15,8 @@ type CreateColumnRequest struct {
 
 // PATCH /api/v1/columns/:id
 type UpdateColumnRequest struct {
-	Name     string  `json:"name" binding:"required,min=1,max=64"`
-	Color    *string `json:"color" binding:"omitempty"` // 🔹 Добавлено (nullable)
+	Name     string  `json:"name" binding:"required,min=1,max=64"` // 🔹 string, required
+	Color    *string `json:"color" binding:"omitempty"`            // 🔹 опционален
 	Position *int    `json:"position,omitempty" binding:"omitempty,min=0"`
 }
 
@@ -45,7 +45,7 @@ func (r *UpdateColumnRequest) Validate() error {
 	if r.Name == "" || len(r.Name) > 64 {
 		return &utils.ValidationError{
 			Field:   "name",
-			Message: "name must be between 1 and 64 characters",
+			Message: "name is required and must be between 1 and 64 characters",
 		}
 	}
 	if r.Color != nil && !isValidHexColor(*r.Color) {
@@ -55,6 +55,6 @@ func (r *UpdateColumnRequest) Validate() error {
 }
 
 func isValidHexColor(s string) bool {
-	matched, _ := regexp.MatchString(`^#[0-9A-Fa-f]{6}$`, s)
+	matched, _ := regexp.MatchString(`^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$`, s)
 	return matched
 }

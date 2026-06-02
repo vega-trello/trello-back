@@ -6,7 +6,7 @@ CREATE TABLE project_column (
     project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
     position INTEGER,
     name VARCHAR(64) NOT NULL,
-    color VARCHAR(7) CHECK (color ~ '^#[0-9A-Fa-f]{6}$' OR color IS NULL),
+    color VARCHAR(9),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -150,20 +150,15 @@ func (r *ColumnRepository) Update(
 		return nil, err
 	}
 
-	query := "UPDATE project_column SET "
-	args := []interface{}{}
-	argIdx := 1
-
-	args = append(args, name)
-	query += fmt.Sprintf("name = $%d", argIdx)
-	argIdx++
+	query := "UPDATE project_column SET name = $1"
+	args := []interface{}{name}
+	argIdx := 2
 
 	if position != nil {
 		args = append(args, *position)
 		query += fmt.Sprintf(", position = $%d", argIdx)
 		argIdx++
 	}
-
 	if color != nil {
 		args = append(args, *color)
 		query += fmt.Sprintf(", color = $%d", argIdx)
