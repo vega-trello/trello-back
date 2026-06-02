@@ -64,14 +64,12 @@ func TestMemberService_GetProjectMembers_Success(t *testing.T) {
 	userUUID := uuid.New()
 
 	expected := []*dto.MemberResponse{
-		{Username: "alice", UserUUID: userUUID.String(), RoleID: 1},
-		{Username: "bob", UserUUID: uuid.New().String(), RoleID: 2},
+		{Username: "alice", UUID: userUUID.String(), RoleID: 1},
+		{Username: "bob", UUID: uuid.New().String(), RoleID: 2},
 	}
 
-	// Проверка доступа вызывающего
 	mockRepo.On("FindByProjectAndUser", ctx, projectUUID, userUUID).
 		Return(&model.ProjectMember{UserUUID: userUUID}, nil)
-	// Получение списка с деталями
 	mockRepo.On("FindByProjectUUIDWithDetails", ctx, projectUUID).
 		Return(expected, nil)
 
@@ -90,7 +88,6 @@ func TestMemberService_GetProjectMembers_AccessDenied(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	// Вызывающий не является участником
 	mockRepo.On("FindByProjectAndUser", ctx, projectUUID, userUUID).
 		Return(nil, ErrMemberNotFound)
 
@@ -111,17 +108,14 @@ func TestMemberService_GetMember_Success(t *testing.T) {
 
 	expected := &dto.MemberResponse{
 		Username: "bob",
-		UserUUID: targetUUID.String(),
+		UUID:     targetUUID.String(),
 		RoleID:   2,
 	}
 
-	// Проверка доступа вызывающего
 	mockRepo.On("FindByProjectAndUser", ctx, projectUUID, userUUID).
 		Return(&model.ProjectMember{UserUUID: userUUID}, nil)
-	// Проверка, что целевой пользователь — участник
 	mockRepo.On("FindByProjectAndUser", ctx, projectUUID, targetUUID).
 		Return(&model.ProjectMember{UserUUID: targetUUID}, nil)
-	// Получение списка для поиска (временное решение)
 	mockRepo.On("FindByProjectUUIDWithDetails", ctx, projectUUID).
 		Return([]*dto.MemberResponse{expected}, nil)
 
@@ -171,10 +165,8 @@ func TestMemberService_AddMember_Success(t *testing.T) {
 		RoleID:      2,
 	}
 
-	// Проверка доступа вызывающего
 	mockRepo.On("FindByProjectAndUser", ctx, projectUUID, userUUID).
 		Return(&model.ProjectMember{UserUUID: userUUID}, nil)
-	// Создание участника
 	mockRepo.On("Create", ctx, projectUUID, targetUUID, 2).
 		Return(expected, nil)
 

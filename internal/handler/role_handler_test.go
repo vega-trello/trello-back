@@ -239,7 +239,21 @@ func TestRoleHandler_CreateRole_InvalidDescription(t *testing.T) {
 func TestRoleHandler_CreateRole_NoPermissions(t *testing.T) {
 	userUUID := uuid.New()
 	projectUUID := uuid.New()
-	roleSvc := &mockRoleService{}
+
+	roleSvc := &mockRoleService{
+		createFunc: func(ctx context.Context, pUUID uuid.UUID, uUUID uuid.UUID, name string, description *string, permissionIDs []int) (*model.Role, error) {
+			if len(permissionIDs) == 0 {
+				return nil, service.ErrInvalidPermission
+			}
+			return &model.Role{
+				ID:          1,
+				ProjectUUID: &projectUUID,
+				Name:        name,
+				Description: description,
+			}, nil
+		},
+	}
+
 	r := setupRoleRouter(t, roleSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 

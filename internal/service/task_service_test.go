@@ -106,6 +106,30 @@ func (m *MockTaskRepository) Delete(
 	return args.Error(0)
 }
 
+// 🔹 ДОБАВЛЕНО: метод Move для соответствия интерфейсу TaskRepository
+func (m *MockTaskRepository) Move(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	taskID int,
+	columnID int,
+	userUUID uuid.UUID,
+) error {
+	args := m.Called(ctx, projectUUID, taskID, columnID, userUUID)
+	return args.Error(0)
+}
+
+// 🔹 ДОБАВЛЕНО: метод Archive для соответствия интерфейсу TaskRepository
+func (m *MockTaskRepository) Archive(
+	ctx context.Context,
+	projectUUID uuid.UUID,
+	taskID int,
+	userUUID uuid.UUID,
+	archive bool,
+) error {
+	args := m.Called(ctx, projectUUID, taskID, userUUID, archive)
+	return args.Error(0)
+}
+
 func stringPtr(s string) *string     { return &s }
 func boolPtr(b bool) *bool           { return &b }
 func timePtr(t time.Time) *time.Time { return &t }
@@ -165,7 +189,7 @@ func TestTaskService_CreateTask_EmptyTitle_Success(t *testing.T) {
 	task, err := svc.CreateTask(ctx, projectUUID, userUUID, req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "", task.Title) // title может быть пустым
+	assert.Equal(t, "", task.Title)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -178,7 +202,7 @@ func TestTaskService_CreateTask_InvalidTitle(t *testing.T) {
 	userUUID := uuid.New()
 
 	_, err := svc.CreateTask(ctx, projectUUID, userUUID, dto.CreateTaskRequest{
-		Title:    string(make([]byte, 257)), // 257 символов — слишком много
+		Title:    string(make([]byte, 257)),
 		ColumnID: intPtr(1),
 	})
 	assert.ErrorIs(t, err, ErrInvalidTitle)
@@ -195,7 +219,7 @@ func TestTaskService_CreateTask_InvalidDateRange(t *testing.T) {
 	userUUID := uuid.New()
 
 	start := "2024-04-01T10:00:00Z"
-	end := "2024-03-01T10:00:00Z" // end < start
+	end := "2024-03-01T10:00:00Z"
 
 	_, err := svc.CreateTask(ctx, projectUUID, userUUID, dto.CreateTaskRequest{
 		Title:     "Task",
@@ -418,7 +442,7 @@ func TestTaskService_UpdateTask_EmptyTitle_Success(t *testing.T) {
 	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "", task.Title) // title очищен
+	assert.Equal(t, "", task.Title)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -431,7 +455,7 @@ func TestTaskService_UpdateTask_InvalidTitle(t *testing.T) {
 	userUUID := uuid.New()
 
 	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{
-		Title: stringPtr(string(make([]byte, 257))), // 257 символов
+		Title: stringPtr(string(make([]byte, 257))),
 	})
 	assert.ErrorIs(t, err, ErrInvalidTitle)
 

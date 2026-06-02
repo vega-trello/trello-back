@@ -113,7 +113,7 @@ func TestAssigneeHandler_ListTaskAssignees_Empty_Success(t *testing.T) {
 
 	assigneeSvc := &mockAssigneeService{
 		listFunc: func(ctx context.Context, pUUID uuid.UUID, tID int, uUUID uuid.UUID) ([]*dto.AssigneeResponse, error) {
-			return []*dto.AssigneeResponse{}, nil // пустой слайс
+			return []*dto.AssigneeResponse{}, nil
 		},
 	}
 
@@ -210,7 +210,7 @@ func TestAssigneeHandler_AddAssignee_Success(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"userUUID": "` + assigneeUUID.String() + `"}`)
+	body := bytes.NewBufferString(`{"user_uuid": "` + assigneeUUID.String() + `"}`)
 	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees?taskID="+strconv.Itoa(taskID), body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -229,7 +229,7 @@ func TestAssigneeHandler_AddAssignee_MissingTaskID(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"userUUID": "` + assigneeUUID.String() + `"}`)
+	body := bytes.NewBufferString(`{"user_uuid": "` + assigneeUUID.String() + `"}`)
 	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -258,7 +258,7 @@ func TestAssigneeHandler_AddAssignee_InvalidUserUUID(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"userUUID": "not-a-uuid"}`)
+	body := bytes.NewBufferString(`{"user_uuid": "not-a-uuid"}`)
 	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees?taskID="+strconv.Itoa(taskID), body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -284,7 +284,7 @@ func TestAssigneeHandler_AddAssignee_AlreadyAssigned(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"userUUID": "` + assigneeUUID.String() + `"}`)
+	body := bytes.NewBufferString(`{"user_uuid": "` + assigneeUUID.String() + `"}`)
 	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees?taskID="+strconv.Itoa(taskID), body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -310,7 +310,7 @@ func TestAssigneeHandler_AddAssignee_UserNotFound(t *testing.T) {
 	r := setupAssigneeRouter(t, assigneeSvc, "test-secret")
 	token := GenerateTestToken(t, userUUID, "test-secret")
 
-	body := bytes.NewBufferString(`{"userUUID": "` + assigneeUUID.String() + `"}`)
+	body := bytes.NewBufferString(`{"user_uuid": "` + assigneeUUID.String() + `"}`)
 	req := httptest.NewRequest("POST", "/projects/"+projectUUID.String()+"/assignees?taskID="+strconv.Itoa(taskID), body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -442,7 +442,7 @@ func TestAssigneeHandler_Unauthorized_AllEndpoints(t *testing.T) {
 		body   string
 	}{
 		{"GET", "/projects/" + uuid.New().String() + "/assignees?taskID=1", ""},
-		{"POST", "/projects/" + uuid.New().String() + "/assignees?taskID=1", `{"userUUID":"` + uuid.New().String() + `"}`},
+		{"POST", "/projects/" + uuid.New().String() + "/assignees?taskID=1", `{"user_uuid":"` + uuid.New().String() + `"}`},
 		{"DELETE", "/projects/" + uuid.New().String() + "/assignee?taskID=1&userUUID=" + uuid.New().String(), ""},
 	}
 

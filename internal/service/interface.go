@@ -70,7 +70,7 @@ type TaskRepository interface {
 	FindByColumn(ctx context.Context, columnID int, userUUID uuid.UUID) ([]*model.TaskDB, error)
 	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate *time.Time, endDate *time.Time, columnID *int, statusID *int, archived *bool) (*model.TaskDB, error)
 	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
-	//Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
 	//Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 

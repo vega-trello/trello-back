@@ -122,6 +122,9 @@ func SetupRouter(
 		protected.DELETE("/projects/:projectUUID/task",
 			middleware.RequirePermission(permissionChecker, service.PermManageTasks),
 			taskHandler.DeleteTask)
+		protected.POST("/projects/:projectUUID/task/move",
+			middleware.RequirePermission(permissionChecker, service.PermManageTasks),
+			taskHandler.MoveTask)
 
 		// Member endpoints
 		protected.GET("/projects/:projectUUID/members",
@@ -168,7 +171,7 @@ func SetupRouter(
 			middleware.RequirePermission(permissionChecker, service.PermManageTags),
 			tagHandler.DeleteTag)
 
-		// ── Tag endpoints
+		// Tag endpoints
 		protected.GET("/projects/:projectUUID/task/tags",
 			middleware.RequirePermission(permissionChecker, service.PermViewProject),
 			tagHandler.ListTaskTags)

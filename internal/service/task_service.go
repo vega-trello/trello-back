@@ -188,19 +188,18 @@ func (s *TaskService) DeleteTask(
 	return nil
 }
 
-/*
 // MoveTask перемещает задачу в другую колонку
 func (s *TaskService) MoveTask(
 	ctx context.Context,
 	projectUUID uuid.UUID,
 	taskID int,
-	targetColumnID int,
+	columnID int,
 	userUUID uuid.UUID,
 ) error {
-	if targetColumnID < 1 {
+	if columnID < 1 {
 		return ErrInvalidColumn
 	}
-	err := s.repo.Move(ctx, projectUUID, taskID, targetColumnID, userUUID)
+	err := s.repo.Move(ctx, projectUUID, taskID, columnID, userUUID)
 	if err != nil {
 		if errors.Is(err, ErrInvalidColumn) {
 			return ErrInvalidColumn
@@ -216,6 +215,7 @@ func (s *TaskService) MoveTask(
 	return nil
 }
 
+/*
 // ArchiveTask архивирует/разархивирует задачу
 func (s *TaskService) ArchiveTask(
 	ctx context.Context,

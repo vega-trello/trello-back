@@ -47,8 +47,8 @@ type TaskServiceInterface interface {
 	GetTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) (*model.TaskDB, error)
 	UpdateTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, req dto_task.UpdateTaskRequest) (*model.TaskDB, error)
 	DeleteTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
-
-	// MoveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
+	
+	MoveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, columnID int, userUUID uuid.UUID) error
 	// ArchiveTask(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 

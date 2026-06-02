@@ -201,8 +201,6 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-/*
-// MoveTask POST /projects/{projectUUID}/tasks/{taskID}/move
 func (h *TaskHandler) MoveTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -215,10 +213,10 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_uuid", "Invalid project UUID format")
 		return
 	}
-
-	taskIDStr := c.Param("taskID")
+	
+	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
-		respondError(c, http.StatusBadRequest, "missing_param", "taskID path parameter is required")
+		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
 		return
 	}
 
@@ -229,14 +227,14 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 	}
 
 	var req struct {
-		TargetColumnID int `json:"target_column_id" binding:"required,min=1"`
+		ColumnID int `json:"column_id" binding:"required,min=1"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	if err := h.taskService.MoveTask(c.Request.Context(), projectUUID, taskID, req.TargetColumnID, userUUID); err != nil {
+	if err := h.taskService.MoveTask(c.Request.Context(), projectUUID, taskID, req.ColumnID, userUUID); err != nil {
 		handleServiceError(c, err)
 		return
 	}
@@ -250,6 +248,7 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromModel(updated))
 }
 
+/*
 // ArchiveTask POST /projects/{projectUUID}/tasks/{taskID}/archive
 func (h *TaskHandler) ArchiveTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
