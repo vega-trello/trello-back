@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -236,14 +237,20 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 }
 
 type VegaProfile struct {
-	UAI json.Number `json:"uai"`
-	FIR string      `json:"fir"`
-	SIR string      `json:"sir"`
-	MID string      `json:"mid"`
-	GRI string      `json:"gri"`
-	GRN string      `json:"grn"`
+	ISS string
+	SUB string
+	AUD string
+	ROL int
+	EXP string
+	JTI string
+	UAI int
+	GRI int
+	GRN string
+	SIR string
+	FIR string
+	MID string
 }
 
 func (p *VegaProfile) GetUAI() string {
-	return p.UAI.String()
+	return strconv.Itoa(p.UAI)
 }
