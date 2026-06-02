@@ -77,7 +77,6 @@ func setupColumnRouter(t *testing.T, colSvc *mockColumnService, jwtSecret string
 		rg.GET("/projects/:projectUUID/columns", h.ListProjectColumns)
 		rg.POST("/projects/:projectUUID/columns", h.CreateColumn)
 
-		// Column-scoped endpoints
 		rg.GET("/columns/:columnID", h.GetColumn)
 		rg.PATCH("/columns/:columnID", h.UpdateColumn)
 		rg.DELETE("/columns/:columnID", h.DeleteColumn)
@@ -100,6 +99,7 @@ func TestColumnHandler_ListProjectColumns_Success(t *testing.T) {
 					ProjectUUID: projectUUID,
 					Name:        "To Do",
 					Position:    0,
+					Color:       nil,
 					CreatedAt:   time.Now(),
 				},
 			}, nil
@@ -121,6 +121,7 @@ func TestColumnHandler_ListProjectColumns_Success(t *testing.T) {
 	require.Len(t, columns, 1)
 	assert.Equal(t, "To Do", columns[0].Name)
 	assert.Equal(t, colID, columns[0].ID)
+	assert.Nil(t, columns[0].Color)
 }
 
 func TestColumnHandler_ListProjectColumns_InvalidUUID(t *testing.T) {
@@ -179,6 +180,7 @@ func TestColumnHandler_CreateColumn_Success(t *testing.T) {
 				ProjectUUID: projectUUID,
 				Name:        req.Name,
 				Position:    *req.Position,
+				Color:       nil,
 				CreatedAt:   time.Now(),
 			}, nil
 		},
@@ -200,6 +202,7 @@ func TestColumnHandler_CreateColumn_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &col))
 	assert.Equal(t, "New Column", col.Name)
 	assert.Equal(t, position, col.Position)
+	assert.Nil(t, col.Color)
 }
 
 func TestColumnHandler_CreateColumn_WithoutPosition(t *testing.T) {
@@ -215,6 +218,7 @@ func TestColumnHandler_CreateColumn_WithoutPosition(t *testing.T) {
 				ProjectUUID: projectUUID,
 				Name:        req.Name,
 				Position:    0,
+				Color:       nil,
 				CreatedAt:   time.Now(),
 			}, nil
 		},
@@ -235,6 +239,7 @@ func TestColumnHandler_CreateColumn_WithoutPosition(t *testing.T) {
 	var col dto.ColumnResponse
 	json.Unmarshal(w.Body.Bytes(), &col)
 	assert.Equal(t, "Auto Position", col.Name)
+	assert.Nil(t, col.Color)
 }
 
 func TestColumnHandler_CreateColumn_InvalidName(t *testing.T) {
@@ -283,6 +288,7 @@ func TestColumnHandler_CreateColumn_AccessDenied(t *testing.T) {
 func TestColumnHandler_GetColumn_Success(t *testing.T) {
 	userUUID := uuid.New()
 	columnID := 42
+	color := "#FF5733"
 
 	colSvc := &mockColumnService{
 		getFunc: func(ctx context.Context, cID int, uUUID uuid.UUID) (*model.Column, error) {
@@ -292,6 +298,7 @@ func TestColumnHandler_GetColumn_Success(t *testing.T) {
 				ID:        columnID,
 				Name:      "Done",
 				Position:  2,
+				Color:     &color,
 				CreatedAt: time.Now(),
 			}, nil
 		},
@@ -311,6 +318,7 @@ func TestColumnHandler_GetColumn_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &col)
 	assert.Equal(t, "Done", col.Name)
 	assert.Equal(t, columnID, col.ID)
+	assert.Equal(t, color, *col.Color)
 }
 
 func TestColumnHandler_GetColumn_InvalidID(t *testing.T) {
@@ -368,6 +376,7 @@ func TestColumnHandler_UpdateColumn_Success(t *testing.T) {
 				ID:        columnID,
 				Name:      newName,
 				Position:  newPosition,
+				Color:     nil,
 				CreatedAt: time.Now(),
 			}, nil
 		},
@@ -389,6 +398,67 @@ func TestColumnHandler_UpdateColumn_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &col)
 	assert.Equal(t, newName, col.Name)
 	assert.Equal(t, newPosition, col.Position)
+	assert.Nil(t, col.Color)
+}
+
+func TestColumnHandler_UpdateColumn_WithColor_Success(t *testing.T) {
+	userUUID := uuid.New()
+	columnID := 42
+	newName := "Updated Name"
+	color := "#00FF00"
+
+	colSvc := &mockColumnService{
+		updateFunc: func(ctx context.Context, cID int, uUUID uuid.UUID, req dto.UpdateColumnRequest) (*model.Column, error) {
+			assert.Equal(t, columnID, cID)
+			assert.Equal(t, userUUID, uUUID)
+			assert.Equal(t, newName, req.Name)
+			assert.NotNil(t, req.Color)
+			assert.Equal(t, color, *req.Color)
+			return &model.Column{
+				ID:        columnID,
+				Name:      newName,
+				Position:  2,
+				Color:     &color,
+				CreatedAt: time.Now(),
+			}, nil
+		},
+	}
+
+	r := setupColumnRouter(t, colSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"name":"Updated Name","color":"#00FF00"}`)
+	req := httptest.NewRequest("PATCH", "/columns/"+strconv.Itoa(columnID), body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var col dto.ColumnResponse
+	json.Unmarshal(w.Body.Bytes(), &col)
+	assert.Equal(t, newName, col.Name)
+	assert.Equal(t, color, *col.Color)
+}
+
+func TestColumnHandler_UpdateColumn_InvalidColor(t *testing.T) {
+	userUUID := uuid.New()
+	columnID := 42
+	colSvc := &mockColumnService{}
+	r := setupColumnRouter(t, colSvc, "test-secret")
+	token := GenerateTestToken(t, userUUID, "test-secret")
+
+	body := bytes.NewBufferString(`{"name":"Test","color":"not-a-color"}`)
+	req := httptest.NewRequest("PATCH", "/columns/"+strconv.Itoa(columnID), body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	AssertErrorResponse(t, w.Body.Bytes(), "validation_error", http.StatusBadRequest)
 }
 
 func TestColumnHandler_UpdateColumn_PartialUpdate_NameOnly(t *testing.T) {
@@ -400,10 +470,12 @@ func TestColumnHandler_UpdateColumn_PartialUpdate_NameOnly(t *testing.T) {
 		updateFunc: func(ctx context.Context, cID int, uUUID uuid.UUID, req dto.UpdateColumnRequest) (*model.Column, error) {
 			assert.Equal(t, newName, req.Name)
 			assert.Nil(t, req.Position)
+			assert.Nil(t, req.Color)
 			return &model.Column{
 				ID:        columnID,
 				Name:      newName,
 				Position:  2,
+				Color:     nil,
 				CreatedAt: time.Now(),
 			}, nil
 		},
@@ -488,6 +560,7 @@ func TestColumnHandler_MoveColumn_Success_Left(t *testing.T) {
 				ID:        columnID,
 				Name:      "Moved",
 				Position:  1,
+				Color:     nil,
 				CreatedAt: time.Now(),
 			}, nil
 		},
@@ -508,6 +581,7 @@ func TestColumnHandler_MoveColumn_Success_Left(t *testing.T) {
 	var col dto.ColumnResponse
 	json.Unmarshal(w.Body.Bytes(), &col)
 	assert.Equal(t, 1, col.Position)
+	assert.Nil(t, col.Color)
 }
 
 func TestColumnHandler_MoveColumn_InvalidDirection(t *testing.T) {

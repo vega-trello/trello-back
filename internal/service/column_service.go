@@ -32,7 +32,6 @@ func (s *ColumnService) CreateColumn(
 	userUUID uuid.UUID,
 	req dto.CreateColumnRequest,
 ) (*model.Column, error) {
-	// 🔹 Валидация
 	if req.Name == "" || len(req.Name) > 64 {
 		return nil, ErrInvalidColumnName
 	}
@@ -40,7 +39,7 @@ func (s *ColumnService) CreateColumn(
 		return nil, ErrInvalidPosition
 	}
 
-	column, err := s.repo.Create(ctx, projectUUID, userUUID, req.Name, req.Position)
+	column, err := s.repo.Create(ctx, projectUUID, userUUID, req.Name, req.Position, nil)
 	if err != nil {
 		if errors.Is(err, ErrAccessDenied) {
 			return nil, ErrAccessDenied
@@ -82,7 +81,7 @@ func (s *ColumnService) GetColumn(
 	return column, nil
 }
 
-// UpdateColumn обновляет имя и/или позицию
+// UpdateColumn обновляет имя и/или позицию и/или цвет
 func (s *ColumnService) UpdateColumn(
 	ctx context.Context,
 	columnID int,
@@ -96,8 +95,12 @@ func (s *ColumnService) UpdateColumn(
 	if req.Position != nil && *req.Position < 0 {
 		return nil, ErrInvalidPosition
 	}
+	// 🔹 Валидация цвета если передан
+	if req.Color != nil && !isValidHexColor(*req.Color) {
+		return nil, errors.New("color must be a valid HEX string (#RRGGBB)")
+	}
 
-	updated, err := s.repo.Update(ctx, columnID, userUUID, req.Name, req.Position)
+	updated, err := s.repo.Update(ctx, columnID, userUUID, req.Name, req.Position, req.Color)
 	if err != nil {
 		if errors.Is(err, ErrColumnNotFound) {
 			return nil, ErrColumnNotFound
@@ -154,4 +157,18 @@ func (s *ColumnService) MoveColumn(
 		return nil, err
 	}
 	return updated, nil
+}
+
+// isValidHexColor проверяет формат цвета (#RRGGBB)
+func isValidHexColor(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for i := 1; i < 7; i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

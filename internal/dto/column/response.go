@@ -12,17 +12,17 @@ type ColumnResponse struct {
 	ProjectUUID uuid.UUID `json:"project_uuid"`
 	Name        string    `json:"name"`
 	Position    int       `json:"position"`
+	Color       *string   `json:"color"`
 	CreatedAt   time.Time `json:"created_at"`
-	// UpdatedAt удалён — нет в схеме
 }
-
-// FromModel конвертирует model.Column - ColumnResponse
+	
 func FromModel(c *model.Column) ColumnResponse {
 	return ColumnResponse{
 		ID:          c.ID,
 		ProjectUUID: c.ProjectUUID,
 		Name:        c.Name,
 		Position:    c.Position,
+		Color:       c.Color,
 		CreatedAt:   c.CreatedAt,
 	}
 }

@@ -14,13 +14,12 @@ import (
 	"github.com/vega-trello/trello-back/internal/model"
 )
 
-// MockColumnRepository — мок для интерфейса service.ColumnRepository
 type MockColumnRepository struct {
 	mock.Mock
 }
 
-func (m *MockColumnRepository) Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, position *int) (*model.Column, error) {
-	args := m.Called(ctx, projectUUID, userUUID, name, position)
+func (m *MockColumnRepository) Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, position *int, color *string) (*model.Column, error) {
+	args := m.Called(ctx, projectUUID, userUUID, name, position, color)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -43,8 +42,8 @@ func (m *MockColumnRepository) FindByID(ctx context.Context, columnID int, userU
 	return args.Get(0).(*model.Column), args.Error(1)
 }
 
-func (m *MockColumnRepository) Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int) (*model.Column, error) {
-	args := m.Called(ctx, columnID, userUUID, name, position)
+func (m *MockColumnRepository) Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int, color *string) (*model.Column, error) {
+	args := m.Called(ctx, columnID, userUUID, name, position, color)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -64,9 +63,7 @@ func (m *MockColumnRepository) Move(ctx context.Context, columnID int, userUUID 
 	return args.Get(0).(*model.Column), args.Error(1)
 }
 
-func intPtr(i int) *int {
-	return &i
-}
+func intPtr(i int) *int { return &i }
 
 func TestColumnService_CreateColumn_Success(t *testing.T) {
 	mockRepo := new(MockColumnRepository)
@@ -82,9 +79,10 @@ func TestColumnService_CreateColumn_Success(t *testing.T) {
 		ProjectUUID: projectUUID,
 		Name:        "To Do",
 		Position:    0,
+		Color:       nil,
 	}
 
-	mockRepo.On("Create", ctx, projectUUID, userUUID, "To Do", intPtr(0)).
+	mockRepo.On("Create", ctx, projectUUID, userUUID, "To Do", intPtr(0), (*string)(nil)).
 		Return(expected, nil)
 
 	column, err := svc.CreateColumn(ctx, projectUUID, userUUID, req)
@@ -135,7 +133,7 @@ func TestColumnService_CreateColumn_AccessDenied(t *testing.T) {
 	userUUID := uuid.New()
 	req := dto.CreateColumnRequest{Name: "Test"}
 
-	mockRepo.On("Create", ctx, projectUUID, userUUID, "Test", (*int)(nil)).
+	mockRepo.On("Create", ctx, projectUUID, userUUID, "Test", (*int)(nil), (*string)(nil)).
 		Return(nil, ErrAccessDenied)
 
 	_, err := svc.CreateColumn(ctx, projectUUID, userUUID, req)
@@ -153,8 +151,8 @@ func TestColumnService_GetProjectColumns_Success(t *testing.T) {
 	userUUID := uuid.New()
 
 	expected := []*model.Column{
-		{ID: 1, Name: "To Do", Position: 0},
-		{ID: 2, Name: "In Progress", Position: 1},
+		{ID: 1, Name: "To Do", Position: 0, Color: nil},
+		{ID: 2, Name: "In Progress", Position: 1, Color: nil},
 	}
 
 	mockRepo.On("FindByProjectUUID", ctx, projectUUID, userUUID).
@@ -192,7 +190,7 @@ func TestColumnService_GetColumn_Success(t *testing.T) {
 	userUUID := uuid.New()
 	columnID := 1
 
-	expected := &model.Column{ID: columnID, Name: "Done", Position: 2}
+	expected := &model.Column{ID: columnID, Name: "Done", Position: 2, Color: nil}
 
 	mockRepo.On("FindByID", ctx, columnID, userUUID).
 		Return(expected, nil)
@@ -251,15 +249,41 @@ func TestColumnService_UpdateColumn_Success(t *testing.T) {
 		Position: &newPos,
 	}
 
-	expected := &model.Column{ID: columnID, Name: newName, Position: newPos}
+	expected := &model.Column{ID: columnID, Name: newName, Position: newPos, Color: nil}
 
-	mockRepo.On("Update", ctx, columnID, userUUID, newName, &newPos).
+	mockRepo.On("Update", ctx, columnID, userUUID, newName, &newPos, (*string)(nil)).
 		Return(expected, nil)
 
 	column, err := svc.UpdateColumn(ctx, columnID, userUUID, req)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, column)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestColumnService_UpdateColumn_WithColor_Success(t *testing.T) {
+	mockRepo := new(MockColumnRepository)
+	svc := NewColumnService(mockRepo)
+
+	ctx := context.Background()
+	userUUID := uuid.New()
+	columnID := 1
+
+	color := "#FF5733"
+	req := dto.UpdateColumnRequest{
+		Name:  "Updated",
+		Color: colorPtr(color),
+	}
+
+	expected := &model.Column{ID: columnID, Name: "Updated", Color: &color}
+
+	mockRepo.On("Update", ctx, columnID, userUUID, "Updated", (*int)(nil), colorPtr(color)).
+		Return(expected, nil)
+
+	column, err := svc.UpdateColumn(ctx, columnID, userUUID, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, color, *column.Color)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -303,6 +327,24 @@ func TestColumnService_UpdateColumn_InvalidPosition(t *testing.T) {
 	mockRepo.AssertNotCalled(t, "Update")
 }
 
+func TestColumnService_UpdateColumn_InvalidColor(t *testing.T) {
+	mockRepo := new(MockColumnRepository)
+	svc := NewColumnService(mockRepo)
+
+	ctx := context.Background()
+	userUUID := uuid.New()
+	invalidColor := "not-a-color"
+
+	_, err := svc.UpdateColumn(ctx, 1, userUUID, dto.UpdateColumnRequest{
+		Name:  "Valid",
+		Color: stringPtr(invalidColor),
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "color must be a valid HEX string")
+
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
 func TestColumnService_UpdateColumn_NotFound(t *testing.T) {
 	mockRepo := new(MockColumnRepository)
 	svc := NewColumnService(mockRepo)
@@ -311,7 +353,7 @@ func TestColumnService_UpdateColumn_NotFound(t *testing.T) {
 	userUUID := uuid.New()
 	req := dto.UpdateColumnRequest{Name: "Updated"}
 
-	mockRepo.On("Update", ctx, 1, userUUID, "Updated", (*int)(nil)).
+	mockRepo.On("Update", ctx, 1, userUUID, "Updated", (*int)(nil), (*string)(nil)).
 		Return(nil, ErrColumnNotFound)
 
 	_, err := svc.UpdateColumn(ctx, 1, userUUID, req)
@@ -328,7 +370,7 @@ func TestColumnService_UpdateColumn_AccessDenied(t *testing.T) {
 	userUUID := uuid.New()
 	req := dto.UpdateColumnRequest{Name: "Updated"}
 
-	mockRepo.On("Update", ctx, 1, userUUID, "Updated", (*int)(nil)).
+	mockRepo.On("Update", ctx, 1, userUUID, "Updated", (*int)(nil), (*string)(nil)).
 		Return(nil, ErrAccessDenied)
 
 	_, err := svc.UpdateColumn(ctx, 1, userUUID, req)
@@ -410,7 +452,7 @@ func TestColumnService_MoveColumn_Success_Left(t *testing.T) {
 	userUUID := uuid.New()
 	columnID := 2
 
-	expected := &model.Column{ID: columnID, Position: 0}
+	expected := &model.Column{ID: columnID, Position: 0, Color: nil}
 
 	mockRepo.On("Move", ctx, columnID, userUUID, "left").
 		Return(expected, nil)
@@ -430,7 +472,7 @@ func TestColumnService_MoveColumn_Success_Right(t *testing.T) {
 	userUUID := uuid.New()
 	columnID := 1
 
-	expected := &model.Column{ID: columnID, Position: 2}
+	expected := &model.Column{ID: columnID, Position: 2, Color: nil}
 
 	mockRepo.On("Move", ctx, columnID, userUUID, "right").
 		Return(expected, nil)

@@ -25,6 +25,7 @@ func (r *ColumnRepository) Create(
 	userUUID uuid.UUID,
 	name string,
 	position *int,
+	color *string,
 ) (*model.Column, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -57,11 +58,11 @@ func (r *ColumnRepository) Create(
 
 	var column model.Column
 	err = tx.QueryRow(ctx, `
-		INSERT INTO project_column (project_uuid, name, position, created_at)
-		VALUES ($1, $2, $3, NOW())
-		RETURNING id, project_uuid, name, position, created_at
-	`, projectUUID, name, pos).Scan(
-		&column.ID, &column.ProjectUUID, &column.Name, &column.Position, &column.CreatedAt,
+		INSERT INTO project_column (project_uuid, name, position, color, created_at)
+		VALUES ($1, $2, $3, $4, NOW())
+		RETURNING id, project_uuid, name, position, color, created_at
+	`, projectUUID, name, pos, color).Scan(
+		&column.ID, &column.ProjectUUID, &column.Name, &column.Position, &column.Color, &column.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("repository: create column: %w", err)
@@ -82,8 +83,8 @@ func (r *ColumnRepository) FindByProjectUUID(
 		return nil, err
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT id, project_uuid, name, position, created_at
-		FROM 	project_column
+		SELECT id, project_uuid, name, position, color, created_at
+		FROM project_column
 		WHERE project_uuid = $1
 		ORDER BY position ASC, created_at ASC
 	`, projectUUID)
@@ -95,7 +96,7 @@ func (r *ColumnRepository) FindByProjectUUID(
 	var columns []*model.Column
 	for rows.Next() {
 		var col model.Column
-		if err := rows.Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt); err != nil {
+		if err := rows.Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.Color, &col.CreatedAt); err != nil {
 			return nil, fmt.Errorf("repository: scan column: %w", err)
 		}
 		columns = append(columns, &col)
@@ -113,12 +114,12 @@ func (r *ColumnRepository) FindByID(
 ) (*model.Column, error) {
 	var col model.Column
 	err := r.db.QueryRow(ctx, `
-		SELECT c.id, c.project_uuid, c.name, c.position, c.created_at
+		SELECT c.id, c.project_uuid, c.name, c.position, c.color, c.created_at
 		FROM project_column c
 		JOIN project_member pm ON c.project_uuid = pm.project_uuid
 		WHERE c.id = $1 AND pm.user_uuid = $2
 	`, columnID, userUUID).Scan(
-		&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt,
+		&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.Color, &col.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrColumnNotFound
@@ -135,6 +136,7 @@ func (r *ColumnRepository) Update(
 	userUUID uuid.UUID,
 	name string,
 	position *int,
+	color *string,
 ) (*model.Column, error) {
 	var projectUUID uuid.UUID
 	err := r.db.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, columnID).Scan(&projectUUID)
@@ -162,11 +164,17 @@ func (r *ColumnRepository) Update(
 		argIdx++
 	}
 
+	if color != nil {
+		args = append(args, *color)
+		query += fmt.Sprintf(", color = $%d", argIdx)
+		argIdx++
+	}
+
 	args = append(args, columnID)
-	query += fmt.Sprintf(" WHERE id = $%d RETURNING id, project_uuid, name, position, created_at", argIdx)
+	query += fmt.Sprintf(" WHERE id = $%d RETURNING id, project_uuid, name, position, color, created_at", argIdx)
 
 	var col model.Column
-	err = r.db.QueryRow(ctx, query, args...).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+	err = r.db.QueryRow(ctx, query, args...).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.Color, &col.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrColumnNotFound
 	}
@@ -213,9 +221,9 @@ func (r *ColumnRepository) Move(
 
 	var col model.Column
 	err = tx.QueryRow(ctx, `
-		SELECT id, project_uuid, name, position, created_at 
+		SELECT id, project_uuid, name, position, color, created_at 
 		FROM project_column WHERE id = $1
-	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.Color, &col.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrColumnNotFound
 	}
@@ -263,9 +271,9 @@ func (r *ColumnRepository) Move(
 	}
 
 	err = tx.QueryRow(ctx, `
-		SELECT id, project_uuid, name, position, created_at 
+		SELECT id, project_uuid, name, position, color, created_at 
 		FROM project_column WHERE id = $1
-	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.CreatedAt)
+	`, columnID).Scan(&col.ID, &col.ProjectUUID, &col.Name, &col.Position, &col.Color, &col.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("repository: refresh column: %w", err)
 	}

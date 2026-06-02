@@ -2,6 +2,7 @@ package dto
 
 import (
 	"errors"
+	"regexp"
 
 	"github.com/vega-trello/trello-back/internal/utils"
 )
@@ -14,8 +15,9 @@ type CreateColumnRequest struct {
 
 // PATCH /api/v1/columns/:id
 type UpdateColumnRequest struct {
-	Name     string `json:"name" binding:"required,min=1,max=64"`
-	Position *int   `json:"position,omitempty" binding:"omitempty,min=0"`
+	Name     string  `json:"name" binding:"required,min=1,max=64"`
+	Color    *string `json:"color" binding:"omitempty"` // 🔹 Добавлено (nullable)
+	Position *int    `json:"position,omitempty" binding:"omitempty,min=0"`
 }
 
 type MoveColumnRequest struct {
@@ -46,5 +48,13 @@ func (r *UpdateColumnRequest) Validate() error {
 			Message: "name must be between 1 and 64 characters",
 		}
 	}
+	if r.Color != nil && !isValidHexColor(*r.Color) {
+		return &utils.ValidationError{Field: "color", Message: "color must be a valid HEX string (#RRGGBB)"}
+	}
 	return nil
+}
+
+func isValidHexColor(s string) bool {
+	matched, _ := regexp.MatchString(`^#[0-9A-Fa-f]{6}$`, s)
+	return matched
 }
