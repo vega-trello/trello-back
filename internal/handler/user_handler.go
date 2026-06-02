@@ -237,18 +237,18 @@ func (h *UserHandler) parseVegaToken(ctx context.Context, token string) (*VegaPr
 }
 
 type VegaProfile struct {
-	ISS string
-	SUB string
-	AUD string
-	ROL int
-	EXP string
-	JTI string
-	UAI int
-	GRI int
-	GRN string
-	SIR string
-	FIR string
-	MID string
+	ISS string `json:"iss"`
+	SUB string `json:"sub"`
+	AUD string `json:"aud"`
+	ROL int    `json:"rol"`
+	EXP string `json:"exp"`
+	JTI string `json:"jti"`
+	UAI int    `json:"uai"`
+	GRI int    `json:"gri"`
+	GRN string `json:"grn"`
+	SIR string `json:"sir"`
+	FIR string `json:"fir"`
+	MID string `json:"mid"`
 }
 
 func (p *VegaProfile) GetUAI() string {
