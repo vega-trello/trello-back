@@ -14,10 +14,12 @@ type TaskResponse struct {
 	CreatorUUID uuid.UUID  `json:"creator_uuid"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
+	Color       *string    `json:"color"`
 	StartDate   *time.Time `json:"start_date"`
 	EndDate     *time.Time `json:"end_date"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	Done        bool       `json:"done"`
 	ArchivedAt  *time.Time `json:"archived_at"`
 }
 
@@ -29,10 +31,12 @@ func FromModel(t *model.TaskDB) TaskResponse {
 		CreatorUUID: t.CreatorUUID,
 		Title:       t.Title,
 		Description: t.Description,
+		Color:       t.Color,
 		StartDate:   t.StartDate,
 		EndDate:     t.EndDate,
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,
+		Done:        t.Done,
 		ArchivedAt:  t.ArchivedAt,
 	}
 }

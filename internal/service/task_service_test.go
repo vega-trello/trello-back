@@ -28,10 +28,12 @@ func (m *MockTaskRepository) Create(
 	creatorUUID uuid.UUID,
 	title string,
 	description string,
+	color *string,
+	done bool,
 	startDate *time.Time,
 	endDate *time.Time,
 ) (*model.TaskDB, error) {
-	args := m.Called(ctx, projectUUID, columnID, statusID, creatorUUID, title, description, startDate, endDate)
+	args := m.Called(ctx, projectUUID, columnID, statusID, creatorUUID, title, description, color, done, startDate, endDate)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -85,11 +87,13 @@ func (m *MockTaskRepository) Update(
 	description *string,
 	startDate *time.Time,
 	endDate *time.Time,
+	color *string,
+	done *bool,
 	columnID *int,
 	statusID *int,
 	archived *bool,
 ) (*model.TaskDB, error) {
-	args := m.Called(ctx, projectUUID, taskID, userUUID, title, description, startDate, endDate, columnID, statusID, archived)
+	args := m.Called(ctx, projectUUID, taskID, userUUID, title, description, startDate, endDate, color, done, columnID, statusID, archived)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -106,7 +110,6 @@ func (m *MockTaskRepository) Delete(
 	return args.Error(0)
 }
 
-// 🔹 ДОБАВЛЕНО: метод Move для соответствия интерфейсу TaskRepository
 func (m *MockTaskRepository) Move(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -118,7 +121,6 @@ func (m *MockTaskRepository) Move(
 	return args.Error(0)
 }
 
-// 🔹 ДОБАВЛЕНО: метод Archive для соответствия интерфейсу TaskRepository
 func (m *MockTaskRepository) Archive(
 	ctx context.Context,
 	projectUUID uuid.UUID,
@@ -133,6 +135,7 @@ func (m *MockTaskRepository) Archive(
 func stringPtr(s string) *string     { return &s }
 func boolPtr(b bool) *bool           { return &b }
 func timePtr(t time.Time) *time.Time { return &t }
+func colorPtr(c string) *string      { return &c }
 
 func TestTaskService_CreateTask_Success(t *testing.T) {
 	mockRepo := new(MockTaskRepository)
@@ -151,11 +154,13 @@ func TestTaskService_CreateTask_Success(t *testing.T) {
 		ColumnID:    1,
 		CreatorUUID: userUUID,
 		Title:       "New Task",
+		Color:       nil,
+		Done:        false,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
 
-	mockRepo.On("Create", ctx, projectUUID, 1, (*int)(nil), userUUID, "New Task", "", (*time.Time)(nil), (*time.Time)(nil)).
+	mockRepo.On("Create", ctx, projectUUID, 1, (*int)(nil), userUUID, "New Task", "", (*string)(nil), false, (*time.Time)(nil), (*time.Time)(nil)).
 		Return(expected, nil)
 
 	task, err := svc.CreateTask(ctx, projectUUID, userUUID, req)
@@ -179,11 +184,11 @@ func TestTaskService_CreateTask_EmptyTitle_Success(t *testing.T) {
 	}
 
 	expected := &model.TaskDB{
-		ID: 1, ColumnID: 1, CreatorUUID: userUUID, Title: "",
+		ID: 1, ColumnID: 1, CreatorUUID: userUUID, Title: "", Color: nil, Done: false,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 
-	mockRepo.On("Create", ctx, projectUUID, 1, (*int)(nil), userUUID, "", "", (*time.Time)(nil), (*time.Time)(nil)).
+	mockRepo.On("Create", ctx, projectUUID, 1, (*int)(nil), userUUID, "", "", (*string)(nil), false, (*time.Time)(nil), (*time.Time)(nil)).
 		Return(expected, nil)
 
 	task, err := svc.CreateTask(ctx, projectUUID, userUUID, req)
@@ -260,7 +265,7 @@ func TestTaskService_CreateTask_AccessDenied(t *testing.T) {
 	userUUID := uuid.New()
 	req := dto.CreateTaskRequest{Title: "Task", ColumnID: intPtr(1)}
 
-	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, ErrAccessDenied)
 
 	_, err := svc.CreateTask(ctx, projectUUID, userUUID, req)
@@ -278,8 +283,8 @@ func TestTaskService_GetProjectTasks_Success(t *testing.T) {
 	userUUID := uuid.New()
 
 	expected := []*model.TaskDB{
-		{ID: 1, Title: "Task 1", ColumnID: 1, CreatorUUID: userUUID},
-		{ID: 2, Title: "Task 2", ColumnID: 2, CreatorUUID: userUUID},
+		{ID: 1, Title: "Task 1", ColumnID: 1, CreatorUUID: userUUID, Color: nil, Done: false},
+		{ID: 2, Title: "Task 2", ColumnID: 2, CreatorUUID: userUUID, Color: nil, Done: false},
 	}
 
 	mockRepo.On("FindByProjectUUID", ctx, projectUUID, userUUID, (*bool)(nil)).
@@ -302,7 +307,7 @@ func TestTaskService_GetProjectTasks_WithArchivedFilter(t *testing.T) {
 	archived := true
 
 	expected := []*model.TaskDB{
-		{ID: 3, Title: "Archived Task", ArchivedAt: timePtr(time.Now())},
+		{ID: 3, Title: "Archived Task", ArchivedAt: timePtr(time.Now()), Color: nil, Done: false},
 	}
 
 	mockRepo.On("FindByProjectUUID", ctx, projectUUID, userUUID, &archived).
@@ -343,6 +348,7 @@ func TestTaskService_GetTask_Success(t *testing.T) {
 
 	expected := &model.TaskDB{
 		ID: taskID, Title: "Task", ColumnID: 1, CreatorUUID: userUUID,
+		Color: nil, Done: false,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 
@@ -402,14 +408,23 @@ func TestTaskService_UpdateTask_Success(t *testing.T) {
 	taskID := 1
 
 	newTitle := "Updated"
-	req := dto.UpdateTaskRequest{Title: &newTitle}
+	req := dto.UpdateTaskRequest{
+		Title:    &newTitle,
+		ColumnID: intPtr(1),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
+	}
 
 	expected := &model.TaskDB{
 		ID: taskID, Title: "Updated", ColumnID: 1, CreatorUUID: userUUID,
+		Color: nil, Done: false,
 		UpdatedAt: time.Now(),
 	}
 
-	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID, &newTitle, (*string)(nil), (*time.Time)(nil), (*time.Time)(nil), (*int)(nil), (*int)(nil), (*bool)(nil)).
+	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID,
+		&newTitle, (*string)(nil), (*time.Time)(nil), (*time.Time)(nil),
+		(*string)(nil), boolPtr(false),
+		intPtr(1), (*int)(nil), boolPtr(false)).
 		Return(expected, nil)
 
 	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
@@ -429,20 +444,68 @@ func TestTaskService_UpdateTask_EmptyTitle_Success(t *testing.T) {
 	taskID := 1
 
 	empty := ""
-	req := dto.UpdateTaskRequest{Title: &empty}
+	req := dto.UpdateTaskRequest{
+		Title:    &empty,
+		ColumnID: intPtr(1),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
+	}
 
 	expected := &model.TaskDB{
 		ID: taskID, Title: "", ColumnID: 1, CreatorUUID: userUUID,
+		Color: nil, Done: false,
 		UpdatedAt: time.Now(),
 	}
 
-	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID, &empty, (*string)(nil), (*time.Time)(nil), (*time.Time)(nil), (*int)(nil), (*int)(nil), (*bool)(nil)).
+	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID,
+		&empty, (*string)(nil), (*time.Time)(nil), (*time.Time)(nil),
+		(*string)(nil), boolPtr(false),
+		intPtr(1), (*int)(nil), boolPtr(false)).
 		Return(expected, nil)
 
 	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "", task.Title)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTaskService_UpdateTask_WithColorAndDone(t *testing.T) {
+	mockRepo := new(MockTaskRepository)
+	svc := NewTaskService(mockRepo)
+
+	ctx := context.Background()
+	projectUUID := uuid.New()
+	userUUID := uuid.New()
+	taskID := 1
+
+	color := "#00FF00"
+	done := true
+
+	req := dto.UpdateTaskRequest{
+		Color:    colorPtr(color),
+		Done:     boolPtr(done),
+		ColumnID: intPtr(1),
+		Archived: boolPtr(false),
+	}
+
+	expected := &model.TaskDB{
+		ID: taskID, Title: "Task", ColumnID: 1, CreatorUUID: userUUID,
+		Color: &color, Done: done,
+		UpdatedAt: time.Now(),
+	}
+
+	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID,
+		(*string)(nil), (*string)(nil), (*time.Time)(nil), (*time.Time)(nil),
+		colorPtr(color), boolPtr(done),
+		intPtr(1), (*int)(nil), boolPtr(false)).
+		Return(expected, nil)
+
+	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, color, *task.Color)
+	assert.True(t, task.Done)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -455,7 +518,10 @@ func TestTaskService_UpdateTask_InvalidTitle(t *testing.T) {
 	userUUID := uuid.New()
 
 	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{
-		Title: stringPtr(string(make([]byte, 257))),
+		Title:    stringPtr(string(make([]byte, 257))),
+		ColumnID: intPtr(1),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
 	})
 	assert.ErrorIs(t, err, ErrInvalidTitle)
 
@@ -476,6 +542,9 @@ func TestTaskService_UpdateTask_InvalidDateRange(t *testing.T) {
 	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{
 		StartDate: &start,
 		EndDate:   &end,
+		ColumnID:  intPtr(1),
+		Done:      boolPtr(false),
+		Archived:  boolPtr(false),
 	})
 	assert.ErrorIs(t, err, ErrInvalidDateRange)
 
@@ -494,13 +563,23 @@ func TestTaskService_UpdateTask_Archive(t *testing.T) {
 	archived := true
 	expected := &model.TaskDB{
 		ID: taskID, Title: "Task", ArchivedAt: timePtr(time.Now()),
+		Color: nil, Done: false,
 		UpdatedAt: time.Now(),
 	}
 
-	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID, (*string)(nil), (*string)(nil), (*time.Time)(nil), (*time.Time)(nil), (*int)(nil), (*int)(nil), &archived).
+	req := dto.UpdateTaskRequest{
+		Archived: boolPtr(archived),
+		ColumnID: intPtr(1),
+		Done:     boolPtr(false),
+	}
+
+	mockRepo.On("Update", ctx, projectUUID, taskID, userUUID,
+		(*string)(nil), (*string)(nil), (*time.Time)(nil), (*time.Time)(nil),
+		(*string)(nil), boolPtr(false),
+		intPtr(1), (*int)(nil), boolPtr(archived)).
 		Return(expected, nil)
 
-	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, dto.UpdateTaskRequest{Archived: &archived})
+	task, err := svc.UpdateTask(ctx, projectUUID, taskID, userUUID, req)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, task.ArchivedAt)
@@ -515,10 +594,15 @@ func TestTaskService_UpdateTask_AccessDenied(t *testing.T) {
 	projectUUID := uuid.New()
 	userUUID := uuid.New()
 
-	mockRepo.On("Update", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	mockRepo.On("Update", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, ErrAccessDenied)
 
-	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{Title: stringPtr("Test")})
+	_, err := svc.UpdateTask(ctx, projectUUID, 1, userUUID, dto.UpdateTaskRequest{
+		Title:    stringPtr("Test"),
+		ColumnID: intPtr(1),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
+	})
 
 	assert.ErrorIs(t, err, ErrAccessDenied)
 	mockRepo.AssertExpectations(t)

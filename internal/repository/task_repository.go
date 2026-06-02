@@ -32,6 +32,8 @@ func (r *TaskRepository) Create(
 	creatorUUID uuid.UUID,
 	title string,
 	description string,
+	color *string,
+	done bool,
 	startDate *time.Time,
 	endDate *time.Time,
 ) (*model.TaskDB, error) {
@@ -75,12 +77,12 @@ func (r *TaskRepository) Create(
 
 	var task model.TaskDB
 	err = tx.QueryRow(ctx, `
-		INSERT INTO tasks (column_id, status_id, creator_uuid, title, description, start_date, end_date, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-		RETURNING id, column_id, status_id, creator_uuid, title, description, archived_at, created_at, updated_at, start_date, end_date
-	`, columnID, statusID, creatorUUID, title, description, startDate, endDate, time.Now()).Scan(
+		INSERT INTO tasks (column_id, status_id, creator_uuid, title, description, color, done, start_date, end_date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+		RETURNING id, column_id, status_id, creator_uuid, title, description, color, done, archived_at, created_at, updated_at, start_date, end_date
+	`, columnID, statusID, creatorUUID, title, description, color, done, startDate, endDate, time.Now()).Scan(
 		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+		&task.Color, &task.Done, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("repository: create task: %w", err)
@@ -100,14 +102,14 @@ func (r *TaskRepository) FindByID(
 	var task model.TaskDB
 	err := r.db.QueryRow(ctx, `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.color, t.done, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
 		WHERE t.id = $1 AND pc.project_uuid = $2 AND pm.user_uuid = $3
 	`, taskID, projectUUID, userUUID).Scan(
 		&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
+		&task.Color, &task.Done, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTaskNotFound
@@ -132,7 +134,7 @@ func (r *TaskRepository) FindByProjectUUID(
 
 	query := `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.color, t.done, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		WHERE pc.project_uuid = $1
@@ -157,7 +159,7 @@ func (r *TaskRepository) FindByProjectUUID(
 	for rows.Next() {
 		var task model.TaskDB
 		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-			&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
+			&task.Color, &task.Done, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
 			return nil, fmt.Errorf("repository: scan task: %w", err)
 		}
 		tasks = append(tasks, &task)
@@ -175,7 +177,7 @@ func (r *TaskRepository) FindByColumn(
 ) ([]*model.TaskDB, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT t.id, t.column_id, t.status_id, t.creator_uuid, t.title, t.description,
-		       t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
+		       t.color, t.done, t.archived_at, t.created_at, t.updated_at, t.start_date, t.end_date
 		FROM tasks t
 		JOIN project_column pc ON t.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
@@ -191,7 +193,7 @@ func (r *TaskRepository) FindByColumn(
 	for rows.Next() {
 		var task model.TaskDB
 		if err := rows.Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-			&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
+			&task.Color, &task.Done, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate); err != nil {
 			return nil, fmt.Errorf("repository: scan task: %w", err)
 		}
 		tasks = append(tasks, &task)
@@ -211,6 +213,8 @@ func (r *TaskRepository) Update(
 	description *string,
 	startDate *time.Time,
 	endDate *time.Time,
+	color *string,
+	done *bool,
 	columnID *int,
 	statusID *int,
 	archived *bool,
@@ -249,6 +253,16 @@ func (r *TaskRepository) Update(
 	if endDate != nil {
 		args = append(args, *endDate)
 		query += fmt.Sprintf(", end_date = $%d", argIdx)
+		argIdx++
+	}
+	if color != nil {
+		args = append(args, *color)
+		query += fmt.Sprintf(", color = $%d", argIdx)
+		argIdx++
+	}
+	if done != nil {
+		args = append(args, *done)
+		query += fmt.Sprintf(", done = $%d", argIdx)
 		argIdx++
 	}
 	if columnID != nil {
@@ -293,11 +307,11 @@ func (r *TaskRepository) Update(
 
 	args = append(args, taskID, projectUUID)
 	query += fmt.Sprintf(" WHERE id = $%d AND column_id IN (SELECT id FROM project_column WHERE project_uuid = $%d)", argIdx, argIdx+1)
-	query += " RETURNING id, column_id, status_id, creator_uuid, title, description, archived_at, created_at, updated_at, start_date, end_date"
+	query += " RETURNING id, column_id, status_id, creator_uuid, title, description, color, done, archived_at, created_at, updated_at, start_date, end_date"
 
 	var task model.TaskDB
 	err = tx.QueryRow(ctx, query, args...).Scan(&task.ID, &task.ColumnID, &task.StatusID, &task.CreatorUUID, &task.Title, &task.Description,
-		&task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate)
+		&task.Color, &task.Done, &task.ArchivedAt, &task.CreatedAt, &task.UpdatedAt, &task.StartDate, &task.EndDate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTaskNotFound
 	}

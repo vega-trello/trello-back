@@ -28,7 +28,6 @@ func NewTaskService(repo TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-// parseDateString хелпер для конвертации *string (DTO) - *time.Time (репозиторий)
 func parseDateString(s *string) (*time.Time, error) {
 	if s == nil || *s == "" {
 		return nil, nil
@@ -38,6 +37,22 @@ func parseDateString(s *string) (*time.Time, error) {
 		return nil, ErrInvalidDateFormat
 	}
 	return &t, nil
+}
+
+func validateHexColor(s *string) error {
+	if s == nil || *s == "" {
+		return nil
+	}
+	if len(*s) != 7 || (*s)[0] != '#' {
+		return errors.New("color must be in format #RRGGBB")
+	}
+	for i := 1; i < 7; i++ {
+		c := (*s)[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
+			return errors.New("color must be in format #RRGGBB")
+		}
+	}
+	return nil
 }
 
 // CreateTask создаёт новую задачу
@@ -66,7 +81,19 @@ func (s *TaskService) CreateTask(
 		return nil, ErrInvalidDateRange
 	}
 
-	task, err := s.repo.Create(ctx, projectUUID, *req.ColumnID, req.StatusID, userUUID, req.Title, req.Description, startDate, endDate)
+	task, err := s.repo.Create(
+		ctx,
+		projectUUID,
+		*req.ColumnID,
+		req.StatusID,
+		userUUID,
+		req.Title,
+		req.Description,
+		nil,
+		false,
+		startDate,
+		endDate,
+	)
 	if err != nil {
 		if errors.Is(err, ErrAccessDenied) {
 			return nil, ErrAccessDenied
@@ -130,6 +157,9 @@ func (s *TaskService) UpdateTask(
 	if req.Description != nil && len(*req.Description) > 2048 {
 		return nil, ErrInvalidDescriptionTask
 	}
+	if err := validateHexColor(req.Color); err != nil {
+		return nil, err
+	}
 
 	var startDate, endDate *time.Time
 	var err error
@@ -149,7 +179,7 @@ func (s *TaskService) UpdateTask(
 		return nil, ErrInvalidDateRange
 	}
 
-	updated, err := s.repo.Update(ctx, projectUUID, taskID, userUUID, req.Title, req.Description, startDate, endDate, req.ColumnID, req.StatusID, req.Archived)
+	updated, err := s.repo.Update(ctx, projectUUID, taskID, userUUID, req.Title, req.Description, startDate, endDate, req.Color, req.Done, req.ColumnID, req.StatusID, req.Archived)
 	if err != nil {
 		if errors.Is(err, ErrTaskNotFound) {
 			return nil, ErrTaskNotFound
@@ -244,5 +274,4 @@ func (s *TaskService) ArchiveTask(
 	}
 	return nil
 }
-
 */

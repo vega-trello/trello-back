@@ -129,6 +129,7 @@ func setupTestRouter(t *testing.T, service *MockTaskService, userUUID uuid.UUID)
 	r.GET("/projects/:projectUUID/task", handler.GetTask)
 	r.PATCH("/projects/:projectUUID/task", handler.UpdateTask)
 	r.DELETE("/projects/:projectUUID/task", handler.DeleteTask)
+	r.POST("/projects/:projectUUID/task/move", handler.MoveTask)
 
 	return r
 }
@@ -149,6 +150,8 @@ func createRequest(method, url string, body interface{}) *http.Request {
 
 func intPtr(i int) *int          { return &i }
 func stringPtr(s string) *string { return &s }
+func boolPtr(b bool) *bool       { return &b }
+func colorPtr(c string) *string  { return &c }
 
 func TestTaskHandler_ListProjectTasks_Success(t *testing.T) {
 	mockSvc := new(MockTaskService)
@@ -156,7 +159,7 @@ func TestTaskHandler_ListProjectTasks_Success(t *testing.T) {
 	projectUUID := uuid.New()
 	r := setupTestRouter(t, mockSvc, userUUID)
 
-	mockTasks := []*model.TaskDB{{ID: 1, Title: "Task 1", ColumnID: 1, CreatorUUID: userUUID}}
+	mockTasks := []*model.TaskDB{{ID: 1, Title: "Task 1", ColumnID: 1, CreatorUUID: userUUID, Done: false, Color: nil}}
 	mockSvc.On("GetProjectTasks", mock.Anything, projectUUID, userUUID, mock.Anything).
 		Return(mockTasks, nil)
 
@@ -191,6 +194,7 @@ func TestTaskHandler_CreateTask_Success(t *testing.T) {
 	mockTask := &model.TaskDB{
 		ID: 1, Title: "New Task", ColumnID: 1,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
 	}
 	mockSvc.On("CreateTask", mock.Anything, projectUUID, userUUID, mock.AnythingOfType("dto.CreateTaskRequest")).
 		Return(mockTask, nil)
@@ -215,8 +219,9 @@ func TestTaskHandler_CreateTask_EmptyTitle_Success(t *testing.T) {
 	}
 
 	mockTask := &model.TaskDB{
-		ID: 1, Title: "", ColumnID: 1, // title может быть пустым
+		ID: 1, Title: "", ColumnID: 1,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
 	}
 	mockSvc.On("CreateTask", mock.Anything, projectUUID, userUUID, mock.AnythingOfType("dto.CreateTaskRequest")).
 		Return(mockTask, nil)
@@ -273,6 +278,7 @@ func TestTaskHandler_GetTask_Success(t *testing.T) {
 	mockTask := &model.TaskDB{
 		ID: 42, Title: "Task 42", ColumnID: 1,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
 	}
 	mockSvc.On("GetTask", mock.Anything, projectUUID, 42, userUUID).
 		Return(mockTask, nil)
@@ -344,10 +350,13 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 	reqBody := dto.UpdateTaskRequest{
 		Title:    stringPtr("Updated"),
 		ColumnID: intPtr(2),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
 	}
 	mockTask := &model.TaskDB{
 		ID: 42, Title: "Updated", ColumnID: 2,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
 	}
 	mockSvc.On("UpdateTask", mock.Anything, projectUUID, 42, userUUID, mock.AnythingOfType("dto.UpdateTaskRequest")).
 		Return(mockTask, nil)
@@ -370,11 +379,45 @@ func TestTaskHandler_UpdateTask_EmptyTitle_Success(t *testing.T) {
 	reqBody := dto.UpdateTaskRequest{
 		Title:    &empty,
 		ColumnID: intPtr(2),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
 	}
 
 	mockTask := &model.TaskDB{
-		ID: 42, Title: "", ColumnID: 2, // title очищен
+		ID: 42, Title: "", ColumnID: 2,
 		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
+	}
+	mockSvc.On("UpdateTask", mock.Anything, projectUUID, 42, userUUID, mock.AnythingOfType("dto.UpdateTaskRequest")).
+		Return(mockTask, nil)
+
+	req := createRequest("PATCH", "/projects/"+projectUUID.String()+"/task?taskID=42", reqBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_WithColorAndDone(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	color := "#FF5733"
+	done := true
+	reqBody := dto.UpdateTaskRequest{
+		Color:    colorPtr(color),
+		Done:     boolPtr(done),
+		ColumnID: intPtr(1),
+		Archived: boolPtr(false),
+	}
+
+	mockTask := &model.TaskDB{
+		ID: 42, Title: "Task", ColumnID: 1,
+		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: done, Color: &color,
 	}
 	mockSvc.On("UpdateTask", mock.Anything, projectUUID, 42, userUUID, mock.AnythingOfType("dto.UpdateTaskRequest")).
 		Return(mockTask, nil)
@@ -417,6 +460,8 @@ func TestTaskHandler_UpdateTask_InvalidColumnID(t *testing.T) {
 	reqBody := dto.UpdateTaskRequest{
 		Title:    stringPtr("Updated"),
 		ColumnID: intPtr(-10),
+		Done:     boolPtr(false),
+		Archived: boolPtr(false),
 	}
 	req := createRequest("PATCH", "/projects/"+projectUUID.String()+"/task?taskID=42", reqBody)
 	w := httptest.NewRecorder()
@@ -498,4 +543,72 @@ func TestTaskHandler_DeleteTask_InvalidTaskID(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	mockSvc.AssertNotCalled(t, "DeleteTask")
+}
+
+func TestTaskHandler_MoveTask_Success(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	taskID := 42
+	newColumnID := 5
+
+	moveReq := struct {
+		ColumnID int `json:"column_id"`
+	}{ColumnID: newColumnID}
+
+	mockTask := &model.TaskDB{
+		ID: taskID, Title: "Moved Task", ColumnID: newColumnID,
+		CreatorUUID: userUUID, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Done: false, Color: nil,
+	}
+
+	mockSvc.On("MoveTask", mock.Anything, projectUUID, taskID, newColumnID, userUUID).
+		Return(nil)
+	mockSvc.On("GetTask", mock.Anything, projectUUID, taskID, userUUID).
+		Return(mockTask, nil)
+
+	req := createRequest("POST", "/projects/"+projectUUID.String()+"/task/move?taskID=42", moveReq)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTaskHandler_MoveTask_InvalidColumnID(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	moveReq := struct {
+		ColumnID int `json:"column_id"`
+	}{ColumnID: 0}
+
+	req := createRequest("POST", "/projects/"+projectUUID.String()+"/task/move?taskID=42", moveReq)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	mockSvc.AssertNotCalled(t, "MoveTask")
+}
+
+func TestTaskHandler_MoveTask_MissingTaskID(t *testing.T) {
+	mockSvc := new(MockTaskService)
+	userUUID := uuid.New()
+	projectUUID := uuid.New()
+	r := setupTestRouter(t, mockSvc, userUUID)
+
+	moveReq := struct {
+		ColumnID int `json:"column_id"`
+	}{ColumnID: 5}
+
+	req := createRequest("POST", "/projects/"+projectUUID.String()+"/task/move", moveReq)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	mockSvc.AssertNotCalled(t, "MoveTask")
 }

@@ -64,14 +64,14 @@ type ColumnRepository interface {
 }
 
 type TaskRepository interface {
-	Create(ctx context.Context, projectUUID uuid.UUID, columnID int, statusID *int, creatorUUID uuid.UUID, title string, description string, startDate *time.Time, endDate *time.Time) (*model.TaskDB, error)
+	Create(ctx context.Context, projectUUID uuid.UUID, columnID int, statusID *int, creatorUUID uuid.UUID, title string, description string, color *string, done bool, startDate *time.Time, endDate *time.Time) (*model.TaskDB, error)
 	FindByID(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) (*model.TaskDB, error)
 	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, archived *bool) ([]*model.TaskDB, error)
 	FindByColumn(ctx context.Context, columnID int, userUUID uuid.UUID) ([]*model.TaskDB, error)
-	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate *time.Time, endDate *time.Time, columnID *int, statusID *int, archived *bool) (*model.TaskDB, error)
+	Update(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, title *string, description *string, startDate *time.Time, endDate *time.Time, color *string, done *bool, columnID *int, statusID *int, archived *bool) (*model.TaskDB, error)
 	Delete(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID) error
 	Move(ctx context.Context, projectUUID uuid.UUID, taskID int, targetColumnID int, userUUID uuid.UUID) error
-	//Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
+	// Archive(ctx context.Context, projectUUID uuid.UUID, taskID int, userUUID uuid.UUID, archive bool) error
 }
 
 type MemberRepository interface {

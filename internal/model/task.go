@@ -13,10 +13,12 @@ type TaskDB struct {
 	CreatorUUID uuid.UUID  `db:"creator_uuid" json:"creator_uuid"`
 	Title       string     `db:"title" json:"title"`
 	Description string     `db:"description" json:"description"`
+	Color       *string    `db:"color" json:"color"`
 	StartDate   *time.Time `db:"start_date" json:"start_date"`
 	EndDate     *time.Time `db:"end_date" json:"end_date"`
 	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
+	Done        bool       `db:"done" json:"done"`
 	ArchivedAt  *time.Time `db:"archived_at" json:"archived_at"`
 }
 

@@ -72,11 +72,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	if req.ColumnID == nil || *req.ColumnID <= 0 {
-		respondError(c, http.StatusBadRequest, "invalid_column_id", "column_id is required and must be positive")
-		return
-	}
-
 	task, err := h.taskService.CreateTask(c.Request.Context(), projectUUID, userUUID, req)
 	if err != nil {
 		handleServiceError(c, err)
@@ -201,6 +196,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// MoveTask POST /projects/{projectUUID}/task/move?taskID={id}
 func (h *TaskHandler) MoveTask(c *gin.Context) {
 	userUUID, ok := middleware.GetUserUUID(c)
 	if !ok {
@@ -213,7 +209,7 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_uuid", "Invalid project UUID format")
 		return
 	}
-	
+
 	taskIDStr := c.Query("taskID")
 	if taskIDStr == "" {
 		respondError(c, http.StatusBadRequest, "missing_param", "taskID query parameter is required")
@@ -234,6 +230,7 @@ func (h *TaskHandler) MoveTask(c *gin.Context) {
 		return
 	}
 
+	// Перемещаем задачу
 	if err := h.taskService.MoveTask(c.Request.Context(), projectUUID, taskID, req.ColumnID, userUUID); err != nil {
 		handleServiceError(c, err)
 		return

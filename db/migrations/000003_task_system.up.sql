@@ -6,6 +6,7 @@ CREATE TABLE project_column (
     project_uuid UUID NOT NULL REFERENCES project(uuid) ON DELETE CASCADE,
     position INTEGER,
     name VARCHAR(64) NOT NULL,
+    color VARCHAR(7) CHECK (color ~ '^#[0-9A-Fa-f]{6}$' OR color IS NULL),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -27,7 +28,9 @@ CREATE TABLE tasks (
     creator_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
     title VARCHAR(256) NOT NULL,
     description TEXT,
-    archived_at TIMESTAMPTZ, --обновлять в гошке
+    color VARCHAR(7) CHECK (color ~ '^#[0-9A-Fa-f]{6}$' OR color IS NULL),
+    done BOOLEAN NOT NULL DEFAULT FALSE,
+    archived_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     start_date TIMESTAMPTZ,
@@ -39,12 +42,11 @@ CREATE INDEX idx_tasks_status ON tasks(status_id);
 CREATE INDEX idx_tasks_creator ON tasks(creator_uuid);
 CREATE INDEX idx_tasks_archived ON tasks(archived_at) WHERE archived_at IS NOT NULL;
 
-
 CREATE TABLE task_assignee (
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    user_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
-    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (task_id, user_uuid)
+   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+   user_uuid UUID NOT NULL REFERENCES base_user(uuid) ON DELETE CASCADE,
+   assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+   PRIMARY KEY (task_id, user_uuid)
 );
 
 CREATE INDEX idx_task_assignee_user ON task_assignee(user_uuid);
