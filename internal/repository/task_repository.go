@@ -147,7 +147,7 @@ func (r *TaskRepository) FindByProjectUUID(
 			query += " AND t.archived_at IS NULL"
 		}
 	}
-	query += " ORDER BY t.created_at DESC"
+	query += " ORDER BY t.done ASC, t.created_at DESC"
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -182,7 +182,7 @@ func (r *TaskRepository) FindByColumn(
 		JOIN project_column pc ON t.column_id = pc.id
 		JOIN project_member pm ON pc.project_uuid = pm.project_uuid
 		WHERE t.column_id = $1 AND pm.user_uuid = $2
-		ORDER BY t.created_at DESC
+		ORDER BY t.done ASC, t.created_at DESC  
 	`, columnID, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("repository: find tasks by column: %w", err)
