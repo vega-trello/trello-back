@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vega-trello/trello-back/internal/auth"
 	"github.com/vega-trello/trello-back/internal/handler"
@@ -25,6 +26,7 @@ func SetupRouter(
 	permissionHandler *handler.PermissionHandler,
 	jwtManager *auth.JWTManager,
 	permissionChecker service.PermissionChecker,
+	permissionDB *pgxpool.Pool,
 ) *gin.Engine {
 	gin.SetMode(gin.DebugMode)
 
@@ -94,16 +96,16 @@ func SetupRouter(
 			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
 			columnHandler.CreateColumn)
 		protected.GET("/columns/:columnID",
-			middleware.RequirePermission(permissionChecker, service.PermViewProject),
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermViewProject), // ← Новый миддлвар
 			columnHandler.GetColumn)
 		protected.PATCH("/columns/:columnID",
-			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns), // ← Новый миддлвар
 			columnHandler.UpdateColumn)
 		protected.DELETE("/columns/:columnID",
-			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns), // ← Новый миддлвар
 			columnHandler.DeleteColumn)
 		protected.POST("/columns/:columnID/move",
-			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns),
 			columnHandler.MoveColumn)
 
 		//Task endpoints

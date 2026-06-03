@@ -52,8 +52,9 @@ func (c *DBPermissionChecker) Check(
 			}
 		}
 	}
+	hasPerm := containsPerm(userPerms, requiredPerm)
 
-	if containsPerm(userPerms, requiredPerm) {
+	if hasPerm {
 		return nil
 	}
 
