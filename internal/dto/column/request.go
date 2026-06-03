@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"encoding/json"
 	"errors"
 	"regexp"
 
@@ -15,9 +16,9 @@ type CreateColumnRequest struct {
 
 // PATCH /api/v1/columns/:id
 type UpdateColumnRequest struct {
-	Name     string  `json:"name" binding:"required,min=1,max=64"` // 🔹 string, required
-	Color    *string `json:"color" binding:"omitempty"`            // 🔹 опционален
-	Position *int    `json:"position,omitempty" binding:"omitempty,min=0"`
+	Name     string          `json:"name" binding:"required,min=1,max=64"`
+	Color    json.RawMessage `json:"color,omitempty"`
+	Position *int            `json:"position,omitempty" binding:"omitempty,min=0"`
 }
 
 type MoveColumnRequest struct {
@@ -48,10 +49,34 @@ func (r *UpdateColumnRequest) Validate() error {
 			Message: "name is required and must be between 1 and 64 characters",
 		}
 	}
-	if r.Color != nil && !isValidHexColor(*r.Color) {
-		return &utils.ValidationError{Field: "color", Message: "color must be a valid HEX string (#RRGGBB)"}
+
+	if r.Color != nil && len(r.Color) > 0 && string(r.Color) != "null" {
+		var colorStr string
+		if err := json.Unmarshal(r.Color, &colorStr); err != nil {
+			return &utils.ValidationError{Field: "color", Message: "color must be a string"}
+		}
+		if !isValidHexColor(colorStr) {
+			return &utils.ValidationError{Field: "color", Message: "color must be a valid HEX string (#RRGGBB)"}
+		}
 	}
 	return nil
+}
+
+func (r *UpdateColumnRequest) GetColor() (*string, bool) {
+	if r.Color == nil || len(r.Color) == 0 {
+		return nil, false
+	}
+
+	if string(r.Color) == "null" {
+		return nil, true
+	}
+
+	var colorStr string
+	if err := json.Unmarshal(r.Color, &colorStr); err != nil {
+		return nil, false
+	}
+
+	return &colorStr, true
 }
 
 func isValidHexColor(s string) bool {

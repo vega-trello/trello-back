@@ -81,7 +81,6 @@ func (s *ColumnService) GetColumn(
 	return column, nil
 }
 
-// UpdateColumn обновляет имя и/или позицию и/или цвет
 func (s *ColumnService) UpdateColumn(
 	ctx context.Context,
 	columnID int,
@@ -94,11 +93,14 @@ func (s *ColumnService) UpdateColumn(
 	if req.Position != nil && *req.Position < 0 {
 		return nil, ErrInvalidPosition
 	}
-	if req.Color != nil && !isValidHexColor(*req.Color) {
-		return nil, errors.New("color must be a valid HEX string (#RRGGBB)")
+
+	colorVal, shouldUpdate := req.GetColor()
+
+	if shouldUpdate && colorVal != nil && !isValidHexColor(*colorVal) {
+		return nil, errors.New("color must be a valid HEX string (#RRGGBB or #RRGGBBAA)")
 	}
 
-	updated, err := s.repo.Update(ctx, columnID, userUUID, req.Name, req.Position, req.Color)
+	updated, err := s.repo.Update(ctx, columnID, userUUID, req.Name, req.Position, colorVal, shouldUpdate)
 	if err != nil {
 		if errors.Is(err, ErrColumnNotFound) {
 			return nil, ErrColumnNotFound
@@ -111,7 +113,6 @@ func (s *ColumnService) UpdateColumn(
 	return updated, nil
 }
 
-// DeleteColumn удаляет колонку
 func (s *ColumnService) DeleteColumn(
 	ctx context.Context,
 	columnID int,

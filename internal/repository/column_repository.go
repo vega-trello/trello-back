@@ -137,6 +137,7 @@ func (r *ColumnRepository) Update(
 	name string,
 	position *int,
 	color *string,
+	updateColor bool,
 ) (*model.Column, error) {
 	var projectUUID uuid.UUID
 	err := r.db.QueryRow(ctx, `SELECT project_uuid FROM project_column WHERE id = $1`, columnID).Scan(&projectUUID)
@@ -159,8 +160,13 @@ func (r *ColumnRepository) Update(
 		query += fmt.Sprintf(", position = $%d", argIdx)
 		argIdx++
 	}
-	if color != nil {
-		args = append(args, *color)
+
+	if updateColor {
+		if color != nil {
+			args = append(args, *color)
+		} else {
+			args = append(args, nil)
+		}
 		query += fmt.Sprintf(", color = $%d", argIdx)
 		argIdx++
 	}

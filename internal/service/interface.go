@@ -58,7 +58,7 @@ type ColumnRepository interface {
 	Create(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID, name string, position *int, color *string) (*model.Column, error)
 	FindByProjectUUID(ctx context.Context, projectUUID uuid.UUID, userUUID uuid.UUID) ([]*model.Column, error)
 	FindByID(ctx context.Context, columnID int, userUUID uuid.UUID) (*model.Column, error)
-	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int, color *string) (*model.Column, error)
+	Update(ctx context.Context, columnID int, userUUID uuid.UUID, name string, position *int, color *string, updateColor bool) (*model.Column, error)
 	Delete(ctx context.Context, columnID int, userUUID uuid.UUID) error
 	Move(ctx context.Context, columnID int, userUUID uuid.UUID, direction string) (*model.Column, error)
 }
