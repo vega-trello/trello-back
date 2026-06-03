@@ -96,13 +96,13 @@ func SetupRouter(
 			middleware.RequirePermission(permissionChecker, service.PermManageColumns),
 			columnHandler.CreateColumn)
 		protected.GET("/columns/:columnID",
-			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermViewProject), // ← Новый миддлвар
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermViewProject),
 			columnHandler.GetColumn)
 		protected.PATCH("/columns/:columnID",
-			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns), // ← Новый миддлвар
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns),
 			columnHandler.UpdateColumn)
 		protected.DELETE("/columns/:columnID",
-			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns), // ← Новый миддлвар
+			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns),
 			columnHandler.DeleteColumn)
 		protected.POST("/columns/:columnID/move",
 			middleware.RequireColumnPermission(permissionChecker, permissionDB, service.PermManageColumns),
